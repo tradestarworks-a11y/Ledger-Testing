@@ -455,7 +455,7 @@ function renderParties(){
       '<div style="font-size:11px;color:#888;margin-top:2px">'+(p.rate||24)+'% p.a. · '+(p.itype||'Compound')+' · '+(p.intjv===false?'No interest JV':'JV '+(p.jvfreq||'Monthly'))+(p.phone?' · '+p.phone:'')+'</div></div>'+
       '<div style="display:flex;align-items:center;gap:8px">'+
       '<div style="text-align:right"><div style="font-weight:500;color:'+c+'">'+fa(Math.abs(r.bal))+' '+(d?'Dr':'Cr')+'</div><div style="font-size:11px;color:#888">Int: '+fa(r.interest)+'</div></div>'+
-      '<button class="btn btn-sm">Edit</button><button class="btn btn-sm btn-danger">Del</button></div>';
+      '<button class="btn btn-sm" title="Edit">✏️</button><button class="btn btn-sm btn-danger" title="Delete">🗑️</button></div>';
     var btns=row.querySelectorAll('button');
     btns[0].addEventListener('click',function(){editParty(p.id);});
     btns[1].addEventListener('click',function(){showConfirm(row,'Delete '+p.name+'?',function(){DB.parties=DB.parties.filter(function(x){return x.id!==p.id;});DB.txns=DB.txns.filter(function(t){return t.pid!==p.id;});save();renderParties();renderDash();});});
@@ -471,7 +471,7 @@ function renderCC(){
     var n=DB.txns.filter(function(t){return t.ccid===c.id;}).length;
     var row=document.createElement('div');row.className='prow';
     row.innerHTML='<div><div style="font-weight:500">'+c.name+'</div><div style="font-size:11px;color:#888;margin-top:2px">'+(c.desc||'—')+' · '+n+' txns</div></div>'+
-      '<div style="display:flex;gap:8px"><button class="btn btn-sm">Edit</button><button class="btn btn-sm btn-danger">Del</button></div>';
+      '<div style="display:flex;gap:8px"><button class="btn btn-sm" title="Edit">✏️</button><button class="btn btn-sm btn-danger" title="Delete">🗑️</button></div>';
     var btns=row.querySelectorAll('button');
     btns[0].addEventListener('click',function(){editCC(c.id);});
     btns[1].addEventListener('click',function(){showConfirm(row,'Delete '+c.name+'?',function(){DB.cc=DB.cc.filter(function(x){return x.id!==c.id;});DB.txns=DB.txns.map(function(t){if(t.ccid===c.id)t.ccid='';return t;});save();renderCC();});});
@@ -487,7 +487,7 @@ function renderModes(){
     var n=DB.txns.filter(function(t){return t.mode===m.name;}).length;
     var row=document.createElement('div');row.className='prow';
     row.innerHTML='<div><div style="font-weight:500">'+m.name+'</div><div style="font-size:11px;color:#888;margin-top:2px">'+n+' txns</div></div>'+
-      '<div style="display:flex;gap:8px"><button class="btn btn-sm">Edit</button><button class="btn btn-sm btn-danger">Del</button></div>';
+      '<div style="display:flex;gap:8px"><button class="btn btn-sm" title="Edit">✏️</button><button class="btn btn-sm btn-danger" title="Delete">🗑️</button></div>';
     var btns=row.querySelectorAll('button');
     btns[0].addEventListener('click',function(){editMode(m.id);});
     btns[1].addEventListener('click',function(){showConfirm(row,'Delete '+m.name+'?',function(){DB.modes=DB.modes.filter(function(x){return x.id!==m.id;});save();renderModes();fillModeDD('t-mode','sel');fillModeDD('f-mode','all');});});
@@ -516,7 +516,7 @@ function renderTxns(){
       '<td><span class="tag">'+t.mode+'</span></td>'+
       '<td>'+(cc?'<span class="tag">'+cc.name+'</span>':'—')+'</td>'+
       '<td style="color:#888;font-size:11px">'+(t.narr||'—')+'</td>'+
-      '<td><button class="btn btn-sm btn-danger">Del</button></td>';
+      '<td><button class="btn btn-sm btn-danger" title="Delete">🗑️</button></td>';
     tr.querySelector('button').addEventListener('click',function(){showConfirm(tr,'Delete?',function(){DB.txns=DB.txns.filter(function(x){return x.id!==t.id;});save();renderTxns();renderDash();});});
     tbody.appendChild(tr);
   });
@@ -573,8 +573,8 @@ function loadPartyRep(){
       '<td></td>';
     if(row.rowType==='receipt'||row.rowType==='payment'){
       var actTd=tr.querySelector('td:last-child');
-      var eb=document.createElement('button');eb.className='btn btn-sm';eb.textContent='Edit';eb.style.marginRight='4px';
-      var db=document.createElement('button');db.className='btn btn-sm btn-danger';db.textContent='Del';
+      var eb=document.createElement('button');eb.className='btn btn-sm';eb.textContent='✏️';eb.title='Edit';eb.style.marginRight='4px';
+      var db=document.createElement('button');db.className='btn btn-sm btn-danger';db.textContent='🗑️';db.title='Delete';
       var tid=row.id;
       eb.addEventListener('click',function(){openEdit(tid);});
       db.addEventListener('click',function(){showConfirm(tr,'Delete?',function(){DB.txns=DB.txns.filter(function(x){return x.id!==tid;});save();loadPartyRep();renderTxns();renderDash();});});
@@ -615,7 +615,7 @@ function loadCCRep(){
       '<td class="num" style="color:#dc2626">'+(t.tt==='payment'?fa(t.amt):'')+'</td>'+
       '<td class="num" style="color:#16a34a">'+(t.tt==='receipt'?fa(t.amt):'')+'</td>'+
       '<td><span class="tag">'+t.mode+'</span></td>'+
-      '<td><button class="btn btn-sm" style="margin-right:4px">Edit</button><button class="btn btn-sm btn-danger">Del</button></td>';
+      '<td><button class="btn btn-sm" style="margin-right:4px" title="Edit">✏️</button><button class="btn btn-sm btn-danger" title="Delete">🗑️</button></td>';
     var btns=tr.querySelectorAll('button');
     btns[0].addEventListener('click',function(){openEdit(t.id);});
     btns[1].addEventListener('click',function(){showConfirm(tr,'Delete?',function(){DB.txns=DB.txns.filter(function(x){return x.id!==t.id;});save();loadCCRep();renderTxns();renderDash();});});
