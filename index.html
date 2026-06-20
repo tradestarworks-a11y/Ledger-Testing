@@ -263,7 +263,13 @@ var LEDGER=fbDB.collection('ledger').doc('main');
   <div id="rep-party">
     <div class="card">
       <div class="frow">
-        <div class="fg"><label style="font-size:11px">Party</label><select id="r-party"><option value="">Select party</option></select></div>
+        <div class="fg" style="position:relative;min-width:180px"><label style="font-size:11px">Parties</label>
+          <div id="r-party-ctrl" class="fsel" style="cursor:pointer;min-height:30px;line-height:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Select parties…</div>
+          <div id="r-party-panel" style="display:none;position:absolute;left:0;right:0;top:100%;z-index:60;background:#fff;border:1px solid #e0e0e0;border-radius:8px;max-height:240px;overflow:auto;box-shadow:0 6px 16px rgba(0,0,0,.12)">
+            <input id="r-party-search" placeholder="Search parties…" style="width:100%;padding:8px 10px;border:none;border-bottom:1px solid #eee;font-size:13px;font-family:inherit;outline:none">
+            <div id="r-party-opts"></div>
+          </div>
+        </div>
         <div class="fg"><label style="font-size:11px">From</label><input id="r-from" type="date"></div>
         <div class="fg"><label style="font-size:11px">To</label><input id="r-to" type="date"></div>
         <div style="display:flex;gap:6px;align-self:flex-end"><button class="btn btn-sm" id="b-pcsv" title="Export to Excel">📊</button><button class="btn btn-sm" id="b-ppdf" title="Export to PDF">📄</button></div>
@@ -282,7 +288,13 @@ var LEDGER=fbDB.collection('ledger').doc('main');
   </div>
   <div id="rep-cc" style="display:none">
     <div class="card"><div class="frow">
-      <div class="fg"><label style="font-size:11px">Cost center</label><select id="r-cc"><option value="">All cost centers</option></select></div>
+      <div class="fg" style="position:relative;min-width:180px"><label style="font-size:11px">Cost centers</label>
+        <div id="r-cc-ctrl" class="fsel" style="cursor:pointer;min-height:30px;line-height:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">All cost centers</div>
+        <div id="r-cc-panel" style="display:none;position:absolute;left:0;right:0;top:100%;z-index:60;background:#fff;border:1px solid #e0e0e0;border-radius:8px;max-height:240px;overflow:auto;box-shadow:0 6px 16px rgba(0,0,0,.12)">
+          <input id="r-cc-search" placeholder="Search cost centers…" style="width:100%;padding:8px 10px;border:none;border-bottom:1px solid #eee;font-size:13px;font-family:inherit;outline:none">
+          <div id="r-cc-opts"></div>
+        </div>
+      </div>
       <div class="fg"><label style="font-size:11px">From</label><input id="r-cc-from" type="date"></div>
       <div class="fg"><label style="font-size:11px">To</label><input id="r-cc-to" type="date"></div>
       <div style="display:flex;gap:6px;align-self:flex-end"><button class="btn btn-sm" id="b-ccsv" title="Export to Excel">📊</button><button class="btn btn-sm" id="b-cpdf" title="Export to PDF">📄</button></div>
@@ -489,11 +501,37 @@ document.getElementById('mt-parties').addEventListener('click',function(){showMa
 document.getElementById('mt-cc').addEventListener('click',function(){showMaster('cc');renderCC();});
 document.getElementById('mt-modes').addEventListener('click',function(){showMaster('modes');renderModes();});
 document.getElementById('nt-txn').addEventListener('click',function(){showTab('txn');fillDD('f-party','all');fillDD('t-party','sel');fillCCDD('t-cc','none');fillModeDD('f-mode','all');fillModeDD('t-mode','sel');renderTxns();backLand();});
-document.getElementById('nt-rep').addEventListener('click',function(){showTab('rep');fillDD('r-party','sel');fillCCDD('r-cc','all');var _rp=DB.parties.find(function(x){return x.id===document.getElementById('r-party').value;});if(_rp&&_rp.opendate)document.getElementById('r-from').value=_rp.opendate;if(!document.getElementById('r-from').value)document.getElementById('r-from').value=fom();if(!document.getElementById('r-to').value)document.getElementById('r-to').value=tod();if(!document.getElementById('r-cc-from').value)document.getElementById('r-cc-from').value=fom();if(!document.getElementById('r-cc-to').value)document.getElementById('r-cc-to').value=tod();loadPartyRep();loadCCRep();});
+document.getElementById('nt-rep').addEventListener('click',function(){showTab('rep');msCtrlText('r-party',getPartyItems(),'Select parties…');msCtrlText('r-cc',getCCItems(),'All cost centers');if(!document.getElementById('r-from').value)document.getElementById('r-from').value=fom();if(!document.getElementById('r-to').value)document.getElementById('r-to').value=tod();if(!document.getElementById('r-cc-from').value)document.getElementById('r-cc-from').value=fom();if(!document.getElementById('r-cc-to').value)document.getElementById('r-cc-to').value=tod();loadPartyRep();loadCCRep();});
 
 function fillDD(id,mode){var el=document.getElementById(id);if(!el)return;var cur=el.value;el.innerHTML=(mode==='all'?'<option value="">All parties</option>':'<option value="">Select party</option>')+DB.parties.map(function(p){return'<option value="'+p.id+'">'+p.name+'</option>';}).join('');el.value=cur;}
 function fillCCDD(id,mode){var el=document.getElementById(id);if(!el)return;var cur=el.value;el.innerHTML=(mode==='all'?'<option value="">All cost centers</option>':'<option value="">None</option>')+DB.cc.map(function(c){return'<option value="'+c.id+'">'+c.name+'</option>';}).join('');el.value=cur;}
 function fillModeDD(id,mode){var el=document.getElementById(id);if(!el)return;var cur=el.value;el.innerHTML=(mode==='all'?'<option value="">All modes</option>':'')+DB.modes.map(function(m){return'<option>'+m.name+'</option>';}).join('');el.value=cur;}
+// ---- Multi-select with search (used in Reports for parties / cost centers) ----
+var MSsel={};
+function msGet(prefix){return MSsel[prefix]||(MSsel[prefix]=[]);}
+function msRenderOpts(prefix,items){
+  var sel=msGet(prefix),q=(document.getElementById(prefix+'-search').value||'').trim().toLowerCase();
+  var list=items.filter(function(it){return it.name.toLowerCase().indexOf(q)>=0;});
+  document.getElementById(prefix+'-opts').innerHTML=list.length?list.map(function(it){return '<label style="display:flex;gap:8px;align-items:center;padding:7px 10px;cursor:pointer;font-size:13px;border-bottom:1px solid #f5f5f5"><input type="checkbox" data-id="'+it.id+'" '+(sel.indexOf(it.id)>=0?'checked':'')+'> '+it.name+'</label>';}).join(''):'<div style="padding:8px 10px;color:#999;font-size:12px">No matches</div>';
+}
+function msCtrlText(prefix,items,placeholder){
+  var sel=msGet(prefix);
+  if(!sel.length){document.getElementById(prefix+'-ctrl').textContent=placeholder;return;}
+  var names=sel.map(function(id){var it=items.find(function(x){return x.id===id;});return it?it.name:null;}).filter(Boolean);
+  document.getElementById(prefix+'-ctrl').textContent=names.length<=2?names.join(', '):(names.length+' selected');
+}
+function setupMS(prefix,getItems,placeholder,onChange){
+  msGet(prefix);
+  var ctrl=document.getElementById(prefix+'-ctrl'),panel=document.getElementById(prefix+'-panel'),search=document.getElementById(prefix+'-search'),opts=document.getElementById(prefix+'-opts');
+  ctrl.addEventListener('click',function(e){e.stopPropagation();if(panel.style.display!=='none'){panel.style.display='none';return;}msRenderOpts(prefix,getItems());panel.style.display='block';search.value='';search.focus();});
+  search.addEventListener('input',function(){msRenderOpts(prefix,getItems());});
+  panel.addEventListener('click',function(e){e.stopPropagation();});
+  opts.addEventListener('change',function(e){var id=e.target.getAttribute&&e.target.getAttribute('data-id');if(!id)return;var sel=msGet(prefix),i=sel.indexOf(id);if(e.target.checked){if(i<0)sel.push(id);}else if(i>=0)sel.splice(i,1);msCtrlText(prefix,getItems(),placeholder);onChange();});
+  document.addEventListener('click',function(){panel.style.display='none';});
+  msCtrlText(prefix,getItems(),placeholder);
+}
+function getPartyItems(){return DB.parties.map(function(p){return{id:p.id,name:p.name};});}
+function getCCItems(){return DB.cc.map(function(c){return{id:c.id,name:c.name};});}
 
 function renderDash(){
   var dr=0,cr=0,it=0;
@@ -585,30 +623,12 @@ function renderTxns(){
 }
 
 function loadPartyRep(){
-  var pid=document.getElementById('r-party').value;
-  var body=document.getElementById('rep-party-body');
-  if(!pid){body.innerHTML='';return;}
-  var party=DB.parties.find(function(p){return p.id===pid;});if(!party)return;
-  var fromEl=document.getElementById('r-from');
-  var toEl=document.getElementById('r-to');
-  // Safety net only: default an empty From to the opening date. The From->opendate
-  // snap on party selection happens in the r-party change handler so that a user
-  // who narrows the From date afterwards isn't overridden on every re-render.
-  if(party.opendate&&!fromEl.value)fromEl.value=party.opendate;
+  var sel=msGet('r-party'),body=document.getElementById('rep-party-body');
+  if(!sel.length){body.innerHTML='';return;}
+  var fromEl=document.getElementById('r-from'),toEl=document.getElementById('r-to');
+  if(!fromEl.value){var od=sel.map(function(id){var p=DB.parties.find(function(x){return x.id===id;});return p&&p.opendate;}).filter(Boolean).sort();fromEl.value=od[0]||fom();}
   if(!toEl.value)toEl.value=tod();
-  var from=fromEl.value;
-  var to=toEl.value;
-  var res=runEngine(party,DB.txns.filter(function(t){return t.pid===pid;}),from,to);
-  var isdr=res.closingBalance>=0;
-  body.innerHTML='<div class="mg">'+
-    '<div class="mc"><div class="ml">Closing balance</div><div class="mv" style="color:'+(isdr?'#dc2626':'#16a34a')+'">'+fa(Math.abs(res.closingBalance))+' '+(isdr?'Dr':'Cr')+'</div></div>'+
-    '<div class="mc"><div class="ml">Total interest posted</div><div class="mv" style="color:#2563eb">'+fa(res.totalInterest)+'</div></div>'+
-    '</div>';
-  var card=document.createElement('div');card.className='card';
-  card.innerHTML='<div style="margin-bottom:10px"><div style="font-weight:500">'+party.name+'</div>'+
-    '<div style="font-size:11px;color:#888">'+fd(from)+' to '+fd(to)+'</div></div>';
-  var wrap=document.createElement('div');wrap.style.overflowX='auto';
-  var tbl=document.createElement('table');tbl.style.tableLayout='auto';
+  var from=fromEl.value,to=toEl.value;
   var hideCls=[];
   if(!document.getElementById('cb-date').checked)hideCls.push('hide-date');
   if(!document.getElementById('cb-type').checked)hideCls.push('hide-type');
@@ -616,6 +636,32 @@ function loadPartyRep(){
   if(!document.getElementById('cb-days').checked)hideCls.push('hide-days');
   if(!document.getElementById('cb-int').checked)hideCls.push('hide-int');
   if(!document.getElementById('cb-act').checked)hideCls.push('hide-act');
+  var parties=sel.map(function(id){return DB.parties.find(function(p){return p.id===id;});}).filter(Boolean);
+  body.innerHTML='';
+  if(parties.length>1){
+    var dr=0,cr=0,it=0,rowsH='';
+    parties.forEach(function(party){
+      var res=runEngine(party,DB.txns.filter(function(t){return t.pid===party.id;}),from,to);
+      var d=res.closingBalance>=0;if(d)dr+=res.closingBalance;else cr+=Math.abs(res.closingBalance);it+=res.totalInterest;
+      rowsH+='<tr><td style="font-weight:500">'+party.name+'</td><td class="num" style="color:'+(d?'#dc2626':'#16a34a')+'">'+fa(Math.abs(res.closingBalance))+' '+(d?'Dr':'Cr')+'</td><td class="num" style="color:#2563eb">'+fa(res.totalInterest)+'</td></tr>';
+    });
+    var sc=document.createElement('div');sc.className='card';
+    sc.innerHTML='<div class="row-hd"><h2>Combined summary — '+parties.length+' parties · '+fd(from)+' to '+fd(to)+'</h2></div>'+
+      '<div class="mg"><div class="mc"><div class="ml">Total receivable (Dr)</div><div class="mv" style="color:#dc2626">'+fa(dr)+'</div></div><div class="mc"><div class="ml">Total payable (Cr)</div><div class="mv" style="color:#16a34a">'+fa(cr)+'</div></div><div class="mc"><div class="ml">Total interest</div><div class="mv" style="color:#2563eb">'+fa(it)+'</div></div></div>'+
+      '<div style="overflow-x:auto"><table><thead><tr><th>Party</th><th class="num">Closing balance</th><th class="num">Interest</th></tr></thead><tbody>'+rowsH+'</tbody></table></div>';
+    body.appendChild(sc);
+  }
+  parties.forEach(function(party){appendPartyLedgerCard(body,party,from,to,parties.length===1,hideCls);});
+}
+function appendPartyLedgerCard(body,party,from,to,showMg,hideCls){
+  var res=runEngine(party,DB.txns.filter(function(t){return t.pid===party.id;}),from,to);
+  var isdr=res.closingBalance>=0;
+  if(showMg){var mg=document.createElement('div');mg.className='mg';mg.innerHTML='<div class="mc"><div class="ml">Closing balance</div><div class="mv" style="color:'+(isdr?'#dc2626':'#16a34a')+'">'+fa(Math.abs(res.closingBalance))+' '+(isdr?'Dr':'Cr')+'</div></div><div class="mc"><div class="ml">Total interest posted</div><div class="mv" style="color:#2563eb">'+fa(res.totalInterest)+'</div></div>';body.appendChild(mg);}
+  var card=document.createElement('div');card.className='card';
+  card.innerHTML='<div style="margin-bottom:10px"><div style="font-weight:500">'+party.name+(showMg?'':' · <span style="font-weight:400;color:'+(isdr?'#dc2626':'#16a34a')+'">'+fa(Math.abs(res.closingBalance))+' '+(isdr?'Dr':'Cr')+'</span> · <span style="font-weight:400;color:#2563eb">Int '+fa(res.totalInterest)+'</span>')+'</div>'+
+    '<div style="font-size:11px;color:#888">'+fd(from)+' to '+fd(to)+'</div></div>';
+  var wrap=document.createElement('div');wrap.style.overflowX='auto';
+  var tbl=document.createElement('table');tbl.style.tableLayout='auto';
   tbl.className=hideCls.join(' ');
   tbl.innerHTML='<thead><tr><th class="c-date">Date</th><th class="c-type">Type</th><th class="c-mode">Mode</th><th class="num">Payment (out)</th><th class="num">Receipt (in)</th><th class="num">Running balance</th><th class="num c-days">Days held</th><th class="num c-int">Interest (₹)</th><th class="c-act">Actions</th></tr></thead>';
   var tbody=document.createElement('tbody');
@@ -664,15 +710,14 @@ function loadPartyRep(){
 }
 
 function loadCCRep(){
-  var ccid=document.getElementById('r-cc').value;
+  var sel=msGet('r-cc');
   var from=document.getElementById('r-cc-from').value;
   var to=document.getElementById('r-cc-to').value;
   var txns=DB.txns.filter(function(t){return(!from||t.date>=from)&&(!to||t.date<=to);});
-  if(ccid)txns=txns.filter(function(t){return t.ccid===ccid;});
+  if(sel.length)txns=txns.filter(function(t){return sel.indexOf(t.ccid)>=0;});
   txns=txns.sort(function(a,b){return a.date.localeCompare(b.date);});
   var out=txns.filter(function(t){return t.tt==='payment';}).reduce(function(s,t){return s+parseFloat(t.amt);},0);
   var inp=txns.filter(function(t){return t.tt==='receipt';}).reduce(function(s,t){return s+parseFloat(t.amt);},0);
-  var ccn=ccid?(DB.cc.find(function(c){return c.id===ccid;})||{name:'Unknown'}).name:'All cost centers';
   var body=document.getElementById('rep-cc-body');
   if(!txns.length){body.innerHTML='<div class="card"><div class="empty">No transactions found</div></div>';return;}
   body.innerHTML='<div class="mg"><div class="mc"><div class="ml">Total out</div><div class="mv" style="color:#dc2626">'+fa(out)+'</div></div><div class="mc"><div class="ml">Total in</div><div class="mv" style="color:#16a34a">'+fa(inp)+'</div></div><div class="mc"><div class="ml">Net</div><div class="mv">'+fa(Math.abs(inp-out))+' '+(inp>=out?'surplus':'deficit')+'</div></div></div>';
@@ -866,24 +911,29 @@ document.getElementById('b-saveedit').addEventListener('click',function(){
 });
 document.getElementById('rt-party').addEventListener('click',function(){document.getElementById('rt-party').className='rtab on';document.getElementById('rt-cc').className='rtab';document.getElementById('rep-party').style.display='block';document.getElementById('rep-cc').style.display='none';loadPartyRep();});
 document.getElementById('rt-cc').addEventListener('click',function(){document.getElementById('rt-cc').className='rtab on';document.getElementById('rt-party').className='rtab';document.getElementById('rep-cc').style.display='block';document.getElementById('rep-party').style.display='none';loadCCRep();});
-document.getElementById('r-party').addEventListener('change',function(){var p=DB.parties.find(function(x){return x.id===document.getElementById('r-party').value;});if(p&&p.opendate)document.getElementById('r-from').value=p.opendate;loadPartyRep();});
+function onPartySelChange(){var sel=msGet('r-party');if(sel.length===1){var p=DB.parties.find(function(x){return x.id===sel[0];});if(p&&p.opendate)document.getElementById('r-from').value=p.opendate;}loadPartyRep();}
+setupMS('r-party',getPartyItems,'Select parties…',onPartySelChange);
+setupMS('r-cc',getCCItems,'All cost centers',loadCCRep);
 document.getElementById('r-from').addEventListener('change',loadPartyRep);
 document.getElementById('r-to').addEventListener('change',loadPartyRep);
 ['cb-date','cb-type','cb-mode','cb-days','cb-int','cb-act'].forEach(function(id){document.getElementById(id).addEventListener('change',loadPartyRep);});
-document.getElementById('r-cc').addEventListener('change',loadCCRep);
 document.getElementById('r-cc-from').addEventListener('change',loadCCRep);
 document.getElementById('r-cc-to').addEventListener('change',loadCCRep);
 
 document.getElementById('b-pcsv').addEventListener('click',function(){
-  var pid=document.getElementById('r-party').value;if(!pid)return;
+  var sel=msGet('r-party');if(!sel.length)return;
   var from=document.getElementById('r-from').value,to=document.getElementById('r-to').value;
-  var party=DB.parties.find(function(p){return p.id===pid;});
-  var res=runEngine(party,DB.txns.filter(function(t){return t.pid===pid;}),from,to);
-  var csv='Date,Type,Mode,Payment (out),Receipt (in),Balance,Days held,Interest\n';
-  res.ledger.forEach(function(r){if(r.rowType==='segment')return;csv+='"'+fd(r.date)+'","'+r.rowType+'","'+(r.mode||'')+'",'+(r.debit&&r.debit>0?r.debit.toFixed(2):'')+','+(r.credit&&r.credit>0?r.credit.toFixed(2):'')+',"'+fa(Math.abs(r.balance))+(r.balance>=0?' Dr':' Cr')+'","'+(r.accrDays?r.accrDays:'')+'","'+(r.accrInt?r.accrInt.toFixed(2):'')+'"\n';});
-  dlCSV(csv,party.name+'_ledger_'+to+'.csv');
+  var parties=sel.map(function(id){return DB.parties.find(function(p){return p.id===id;});}).filter(Boolean);
+  var csv='';
+  parties.forEach(function(party){
+    var res=runEngine(party,DB.txns.filter(function(t){return t.pid===party.id;}),from,to);
+    csv+=party.name+' ('+fd(from)+' to '+fd(to)+')\nDate,Type,Mode,Payment (out),Receipt (in),Balance,Days held,Interest\n';
+    res.ledger.forEach(function(r){if(r.rowType==='segment')return;csv+='"'+fd(r.date)+'","'+r.rowType+'","'+(r.mode||'')+'",'+(r.debit&&r.debit>0?r.debit.toFixed(2):'')+','+(r.credit&&r.credit>0?r.credit.toFixed(2):'')+',"'+fa(Math.abs(r.balance))+(r.balance>=0?' Dr':' Cr')+'","'+(r.accrDays?r.accrDays:'')+'","'+(r.accrInt?r.accrInt.toFixed(2):'')+'"\n';});
+    csv+='\n';
+  });
+  dlCSV(csv,(parties.length===1?parties[0].name:parties.length+'_parties')+'_ledger_'+to+'.csv');
 });
-function partyLedgerPDF(party,res,from,to){
+function partyLedgerSection(party,res,from,to){
   var isdr=res.closingBalance>=0;
   var rows=res.ledger.map(function(r){
     if(r.rowType==='segment')return'';
@@ -896,36 +946,41 @@ function partyLedgerPDF(party,res,from,to){
       '<td style="text-align:right">'+(r.accrDays?r.accrDays+' d':'')+'</td>'+
       '<td style="text-align:right;color:#2563eb">'+(r.accrInt?fa(r.accrInt):'')+'</td></tr>';
   }).join('');
-  printPDF('<!DOCTYPE html><html><head><meta charset="utf-8"><title>'+party.name+'</title><style>html{-webkit-print-color-adjust:exact;print-color-adjust:exact}body{font-family:Arial,sans-serif;font-size:11px;margin:28px;color:#222}h1{font-size:15px;margin-bottom:4px}p{color:#888;font-size:10px;margin-bottom:12px}.sum{display:flex;gap:14px;margin-bottom:14px;flex-wrap:wrap}.box{background:#f5f5f5;padding:8px 12px;border-radius:4px;min-width:110px}.lbl{font-size:9px;color:#888;margin-bottom:2px}.val{font-size:13px;font-weight:700}table{width:100%;border-collapse:collapse;font-size:10px}th{background:#f0f0f0;padding:5px 6px;text-align:left;border-bottom:1px solid #ddd}td{padding:4px 6px;border-bottom:1px solid #eee}.tf{font-weight:700;background:#f9f9f9}@media print{#ctrl{display:none!important}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}}</style></head><body>'+
-    '<h1>'+party.name+'</h1><p>'+fd(from)+' to '+fd(to)+'</p>'+
+  return '<h1>'+party.name+'</h1><p>'+fd(from)+' to '+fd(to)+'</p>'+
     '<div class="sum"><div class="box"><div class="lbl">Closing balance</div><div class="val" style="color:'+(isdr?'#dc2626':'#16a34a')+'">'+fa(Math.abs(res.closingBalance))+' '+(isdr?'Dr':'Cr')+'</div></div>'+
     '<div class="box"><div class="lbl">Interest posted</div><div class="val" style="color:#2563eb">'+fa(res.totalInterest)+'</div></div></div>'+
     '<table><thead><tr><th>Date</th><th>Type</th><th>Mode</th><th style="text-align:right">Payment</th><th style="text-align:right">Receipt</th><th style="text-align:right">Balance</th><th style="text-align:right">Days</th><th style="text-align:right">Interest</th></tr></thead><tbody>'+rows+
-    '<tr class="tf"><td colspan="5" style="text-align:right">Closing balance / Total interest</td><td style="text-align:right">'+fa(Math.abs(res.closingBalance))+' '+(isdr?'Dr':'Cr')+'</td><td></td><td style="text-align:right;color:#2563eb">'+fa(res.totalInterest)+'</td></tr></tbody></table></body></html>');
+    '<tr class="tf"><td colspan="5" style="text-align:right">Closing balance / Total interest</td><td style="text-align:right">'+fa(Math.abs(res.closingBalance))+' '+(isdr?'Dr':'Cr')+'</td><td></td><td style="text-align:right;color:#2563eb">'+fa(res.totalInterest)+'</td></tr></tbody></table>';
 }
+function ledgerPdfDoc(title,inner){
+  printPDF('<!DOCTYPE html><html><head><meta charset="utf-8"><title>'+title+'</title><style>html{-webkit-print-color-adjust:exact;print-color-adjust:exact}body{font-family:Arial,sans-serif;font-size:11px;margin:28px;color:#222}h1{font-size:15px;margin-bottom:4px}p{color:#888;font-size:10px;margin-bottom:12px}.sum{display:flex;gap:14px;margin-bottom:14px;flex-wrap:wrap}.box{background:#f5f5f5;padding:8px 12px;border-radius:4px;min-width:110px}.lbl{font-size:9px;color:#888;margin-bottom:2px}.val{font-size:13px;font-weight:700}table{width:100%;border-collapse:collapse;font-size:10px;margin-bottom:18px}th{background:#f0f0f0;padding:5px 6px;text-align:left;border-bottom:1px solid #ddd}td{padding:4px 6px;border-bottom:1px solid #eee}.tf{font-weight:700;background:#f9f9f9}@media print{#ctrl{display:none!important}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}}</style></head><body>'+inner+'</body></html>');
+}
+function partyLedgerPDF(party,res,from,to){ledgerPdfDoc(party.name,partyLedgerSection(party,res,from,to));}
 document.getElementById('b-ppdf').addEventListener('click',function(){
-  var pid=document.getElementById('r-party').value;if(!pid)return;
+  var sel=msGet('r-party');if(!sel.length)return;
   var from=document.getElementById('r-from').value,to=document.getElementById('r-to').value;
-  var party=DB.parties.find(function(p){return p.id===pid;});
-  partyLedgerPDF(party,runEngine(party,DB.txns.filter(function(t){return t.pid===pid;}),from,to),from,to);
+  var parties=sel.map(function(id){return DB.parties.find(function(p){return p.id===id;});}).filter(Boolean);
+  if(parties.length===1){partyLedgerPDF(parties[0],runEngine(parties[0],DB.txns.filter(function(t){return t.pid===parties[0].id;}),from,to),from,to);return;}
+  var inner=parties.map(function(p,ix){var res=runEngine(p,DB.txns.filter(function(t){return t.pid===p.id;}),from,to);return (ix>0?'<div style="page-break-before:always"></div>':'')+partyLedgerSection(p,res,from,to);}).join('');
+  ledgerPdfDoc('Combined ledger',inner);
 });
+function ccLabel(sel,plural){return sel.length?(sel.length===1?(DB.cc.find(function(c){return c.id===sel[0];})||{name:'Cost center'}).name:sel.length+(plural||' cost centers')):'All cost centers';}
 document.getElementById('b-ccsv').addEventListener('click',function(){
-  var ccid=document.getElementById('r-cc').value,from=document.getElementById('r-cc-from').value,to=document.getElementById('r-cc-to').value;
-  var txns=DB.txns.filter(function(t){return(!from||t.date>=from)&&(!to||t.date<=to);});if(ccid)txns=txns.filter(function(t){return t.ccid===ccid;});
-  var ccn=ccid?(DB.cc.find(function(c){return c.id===ccid;})||{name:'All'}).name:'All';
-  var csv='Date,Party,Narration,Payment,Receipt,Mode\n';
-  txns.forEach(function(t){var p=DB.parties.find(function(x){return x.id===t.pid;});csv+=fd(t.date)+',"'+(p?p.name:'')+'","'+(t.narr||'')+'",'+( t.tt==='payment'?t.amt:'')+','+(t.tt==='receipt'?t.amt:'')+','+t.mode+'\n';});
-  dlCSV(csv,'cc_'+ccn+'_'+to+'.csv');
+  var sel=msGet('r-cc'),from=document.getElementById('r-cc-from').value,to=document.getElementById('r-cc-to').value;
+  var txns=DB.txns.filter(function(t){return(!from||t.date>=from)&&(!to||t.date<=to);});if(sel.length)txns=txns.filter(function(t){return sel.indexOf(t.ccid)>=0;});
+  var csv='Date,Party,Cost center,Narration,Payment,Receipt,Mode\n';
+  txns.forEach(function(t){var p=DB.parties.find(function(x){return x.id===t.pid;});var c=DB.cc.find(function(x){return x.id===t.ccid;});csv+=fd(t.date)+',"'+(p?p.name:'')+'","'+(c?c.name:'')+'","'+(t.narr||'')+'",'+( t.tt==='payment'?t.amt:'')+','+(t.tt==='receipt'?t.amt:'')+','+t.mode+'\n';});
+  dlCSV(csv,'cc_'+ccLabel(sel,'_cost_centers').replace(/[^a-z0-9]+/gi,'_')+'_'+to+'.csv');
 });
 document.getElementById('b-cpdf').addEventListener('click',function(){
-  var ccid=document.getElementById('r-cc').value,from=document.getElementById('r-cc-from').value,to=document.getElementById('r-cc-to').value;
-  var txns=DB.txns.filter(function(t){return(!from||t.date>=from)&&(!to||t.date<=to);});if(ccid)txns=txns.filter(function(t){return t.ccid===ccid;});
+  var sel=msGet('r-cc'),from=document.getElementById('r-cc-from').value,to=document.getElementById('r-cc-to').value;
+  var txns=DB.txns.filter(function(t){return(!from||t.date>=from)&&(!to||t.date<=to);});if(sel.length)txns=txns.filter(function(t){return sel.indexOf(t.ccid)>=0;});
   txns=txns.sort(function(a,b){return a.date.localeCompare(b.date);});
   var out=txns.filter(function(t){return t.tt==='payment';}).reduce(function(s,t){return s+parseFloat(t.amt);},0);
   var inp=txns.filter(function(t){return t.tt==='receipt';}).reduce(function(s,t){return s+parseFloat(t.amt);},0);
-  var ccn=ccid?(DB.cc.find(function(c){return c.id===ccid;})||{name:'Unknown'}).name:'All cost centers';
-  var rows=txns.map(function(t){var p=DB.parties.find(function(x){return x.id===t.pid;});return'<tr><td>'+fd(t.date)+'</td><td>'+(p?p.name:'—')+'</td><td>'+(t.narr||'—')+'</td><td style="text-align:right;color:#dc2626">'+(t.tt==='payment'?fa(t.amt):'')+'</td><td style="text-align:right;color:#16a34a">'+(t.tt==='receipt'?fa(t.amt):'')+'</td><td>'+t.mode+'</td></tr>';}).join('');
-  printPDF('<!DOCTYPE html><html><head><meta charset="utf-8"><title>'+ccn+'</title><style>html{-webkit-print-color-adjust:exact;print-color-adjust:exact}body{font-family:Arial,sans-serif;font-size:11px;margin:28px}h1{font-size:15px;margin-bottom:4px}p{color:#888;font-size:10px;margin-bottom:12px}table{width:100%;border-collapse:collapse;font-size:10px}th{background:#f0f0f0;padding:5px 6px;text-align:left;border-bottom:1px solid #ddd}td{padding:4px 6px;border-bottom:1px solid #eee}.tf{font-weight:700;background:#f9f9f9}@media print{#ctrl{display:none!important}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}}</style></head><body><h1>'+ccn+'</h1><p>'+fd(from)+' to '+fd(to)+' · '+txns.length+' transactions</p><table><thead><tr><th>Date</th><th>Party</th><th>Narration</th><th style="text-align:right">Payment</th><th style="text-align:right">Receipt</th><th>Mode</th></tr></thead><tbody>'+rows+'<tr class="tf"><td colspan="3">Total</td><td style="text-align:right;color:#dc2626">'+fa(out)+'</td><td style="text-align:right;color:#16a34a">'+fa(inp)+'</td><td></td></tr></tbody></table></body></html>');
+  var ccn=ccLabel(sel);
+  var rows=txns.map(function(t){var p=DB.parties.find(function(x){return x.id===t.pid;});var c=DB.cc.find(function(x){return x.id===t.ccid;});return'<tr><td>'+fd(t.date)+'</td><td>'+(p?p.name:'—')+'</td><td>'+(c?c.name:'—')+'</td><td>'+(t.narr||'—')+'</td><td style="text-align:right;color:#dc2626">'+(t.tt==='payment'?fa(t.amt):'')+'</td><td style="text-align:right;color:#16a34a">'+(t.tt==='receipt'?fa(t.amt):'')+'</td><td>'+t.mode+'</td></tr>';}).join('');
+  printPDF('<!DOCTYPE html><html><head><meta charset="utf-8"><title>'+ccn+'</title><style>html{-webkit-print-color-adjust:exact;print-color-adjust:exact}body{font-family:Arial,sans-serif;font-size:11px;margin:28px}h1{font-size:15px;margin-bottom:4px}p{color:#888;font-size:10px;margin-bottom:12px}table{width:100%;border-collapse:collapse;font-size:10px}th{background:#f0f0f0;padding:5px 6px;text-align:left;border-bottom:1px solid #ddd}td{padding:4px 6px;border-bottom:1px solid #eee}.tf{font-weight:700;background:#f9f9f9}@media print{#ctrl{display:none!important}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}}</style></head><body><h1>'+ccn+'</h1><p>'+fd(from)+' to '+fd(to)+' · '+txns.length+' transactions</p><table><thead><tr><th>Date</th><th>Party</th><th>Cost center</th><th>Narration</th><th style="text-align:right">Payment</th><th style="text-align:right">Receipt</th><th>Mode</th></tr></thead><tbody>'+rows+'<tr class="tf"><td colspan="4">Total</td><td style="text-align:right;color:#dc2626">'+fa(out)+'</td><td style="text-align:right;color:#16a34a">'+fa(inp)+'</td><td></td></tr></tbody></table></body></html>');
 });
 
 // ---- Firebase Auth + cloud data sync ----
@@ -951,7 +1006,7 @@ function refreshUI(){
   var act=document.querySelector('.section.active'),id=act?act.id:'';
   if(id==='sec-masters'){renderParties();renderCC();renderModes();}
   else if(id==='sec-txn'){fillDD('f-party','all');fillDD('t-party','sel');fillCCDD('t-cc','none');fillModeDD('f-mode','all');fillModeDD('t-mode','sel');renderTxns();}
-  else if(id==='sec-rep'){fillDD('r-party','sel');fillCCDD('r-cc','all');loadPartyRep();loadCCRep();}
+  else if(id==='sec-rep'){msCtrlText('r-party',getPartyItems(),'Select parties…');msCtrlText('r-cc',getCCItems(),'All cost centers');loadPartyRep();loadCCRep();}
 }
 if(SHARE){ initViewer(SHARE); }
 else fbAuth.onAuthStateChanged(function(user){
