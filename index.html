@@ -83,6 +83,7 @@ td{padding:7px 8px;border-bottom:1px solid #f5f5f5;vertical-align:middle}
 .int-toggle{display:flex;align-items:center;gap:8px;font-size:13px;padding:6px 0}
 .int-toggle input[type=checkbox]{width:16px;height:16px;cursor:pointer}
 #d-parties,#txn-list{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.hide-date .c-date,.hide-type .c-type,.hide-days .c-days,.hide-int .c-int,.hide-act .c-act{display:none}
 @media(max-width:600px){
   body{padding:.5rem}
   .app{padding:1rem;border-radius:8px}
@@ -257,6 +258,14 @@ var LEDGER=fbDB.collection('ledger').doc('main');
         <div class="fg"><label style="font-size:11px">From</label><input id="r-from" type="date"></div>
         <div class="fg"><label style="font-size:11px">To</label><input id="r-to" type="date"></div>
         <div style="display:flex;gap:6px;align-self:flex-end"><button class="btn btn-sm" id="b-pcsv" title="Export to Excel">📊</button><button class="btn btn-sm" id="b-ppdf" title="Export to PDF">📄</button></div>
+      </div>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:#666;margin-top:10px;align-items:center">
+        <span style="color:#888">Columns:</span>
+        <label class="int-toggle" style="padding:0"><input type="checkbox" id="cb-date" checked> Date</label>
+        <label class="int-toggle" style="padding:0"><input type="checkbox" id="cb-type" checked> Type</label>
+        <label class="int-toggle" style="padding:0"><input type="checkbox" id="cb-days" checked> Days held</label>
+        <label class="int-toggle" style="padding:0"><input type="checkbox" id="cb-int" checked> Interest</label>
+        <label class="int-toggle" style="padding:0"><input type="checkbox" id="cb-act" checked> Actions</label>
       </div>
     </div>
     <div id="rep-party-body"></div>
@@ -548,7 +557,14 @@ function loadPartyRep(){
     '<div style="font-size:11px;color:#888">'+fd(from)+' to '+fd(to)+'</div></div>';
   var wrap=document.createElement('div');wrap.style.overflowX='auto';
   var tbl=document.createElement('table');tbl.style.tableLayout='auto';
-  tbl.innerHTML='<thead><tr><th>Date</th><th>Type</th><th class="num">Payment (out)</th><th class="num">Receipt (in)</th><th class="num">Running balance</th><th class="num">Days held</th><th class="num">Interest (₹)</th><th>Actions</th></tr></thead>';
+  var hideCls=[];
+  if(!document.getElementById('cb-date').checked)hideCls.push('hide-date');
+  if(!document.getElementById('cb-type').checked)hideCls.push('hide-type');
+  if(!document.getElementById('cb-days').checked)hideCls.push('hide-days');
+  if(!document.getElementById('cb-int').checked)hideCls.push('hide-int');
+  if(!document.getElementById('cb-act').checked)hideCls.push('hide-act');
+  tbl.className=hideCls.join(' ');
+  tbl.innerHTML='<thead><tr><th class="c-date">Date</th><th class="c-type">Type</th><th class="num">Payment (out)</th><th class="num">Receipt (in)</th><th class="num">Running balance</th><th class="num c-days">Days held</th><th class="num c-int">Interest (₹)</th><th class="c-act">Actions</th></tr></thead>';
   var tbody=document.createElement('tbody');
   res.ledger.forEach(function(row){
     if(row.rowType==='segment')return;
@@ -564,13 +580,13 @@ function loadPartyRep(){
     else typeCell='<span style="font-size:10px;color:#999">Accrual</span>';
     var cc=row.ccid?DB.cc.find(function(x){return x.id===row.ccid;}):null;
     var modeCell=row.mode?'<span class="tag">'+row.mode+'</span>':'—';
-    tr.innerHTML='<td style="white-space:nowrap">'+dateCell+'</td><td>'+typeCell+'</td>'+
+    tr.innerHTML='<td class="c-date" style="white-space:nowrap">'+dateCell+'</td><td class="c-type">'+typeCell+'</td>'+
       '<td class="num" style="color:#dc2626">'+(row.debit&&row.debit>0?fa(row.debit):'')+'</td>'+
       '<td class="num" style="color:#16a34a">'+(row.credit&&row.credit>0?fa(row.credit):'')+'</td>'+
       '<td class="num" style="font-weight:500;color:'+(row.balance>=0?'#dc2626':'#16a34a')+'">'+fa(Math.abs(row.balance))+' '+(row.balance>=0?'Dr':'Cr')+'</td>'+
-      '<td class="num" style="color:#999">'+(row.accrDays?row.accrDays+' d':'')+'</td>'+
-      '<td class="num" style="color:#2563eb">'+(row.accrInt?fa(row.accrInt):'')+'</td>'+
-      '<td></td>';
+      '<td class="num c-days" style="color:#999">'+(row.accrDays?row.accrDays+' d':'')+'</td>'+
+      '<td class="num c-int" style="color:#2563eb">'+(row.accrInt?fa(row.accrInt):'')+'</td>'+
+      '<td class="c-act"></td>';
     if(row.rowType==='receipt'||row.rowType==='payment'){
       var actTd=tr.querySelector('td:last-child');
       var eb=document.createElement('button');eb.className='btn btn-sm';eb.textContent='✏️';eb.title='Edit';eb.style.marginRight='4px';
@@ -583,10 +599,13 @@ function loadPartyRep(){
     tbody.appendChild(tr);
   });
   var foot=document.createElement('tr');foot.className='tr-foot';
-  foot.innerHTML='<td colspan="4" style="text-align:right;font-weight:600">Closing balance / Total interest</td>'+
-    '<td class="num" style="font-weight:600">'+fa(Math.abs(res.closingBalance))+' '+(isdr?'Dr':'Cr')+'</td>'+
+  foot.innerHTML='<td class="c-date"></td><td class="c-type"></td>'+
+    '<td class="num" style="font-weight:600">Totals</td>'+
     '<td class="num"></td>'+
-    '<td class="num" style="color:#2563eb;font-weight:600">'+fa(res.totalInterest)+'</td><td></td>';
+    '<td class="num" style="font-weight:600">'+fa(Math.abs(res.closingBalance))+' '+(isdr?'Dr':'Cr')+'</td>'+
+    '<td class="num c-days"></td>'+
+    '<td class="num c-int" style="color:#2563eb;font-weight:600">'+fa(res.totalInterest)+'</td>'+
+    '<td class="c-act"></td>';
   tbody.appendChild(foot);tbl.appendChild(tbody);wrap.appendChild(tbl);card.appendChild(wrap);body.appendChild(card);
 }
 
@@ -734,6 +753,7 @@ document.getElementById('rt-cc').addEventListener('click',function(){document.ge
 document.getElementById('r-party').addEventListener('change',function(){var p=DB.parties.find(function(x){return x.id===document.getElementById('r-party').value;});if(p&&p.opendate)document.getElementById('r-from').value=p.opendate;loadPartyRep();});
 document.getElementById('r-from').addEventListener('change',loadPartyRep);
 document.getElementById('r-to').addEventListener('change',loadPartyRep);
+['cb-date','cb-type','cb-days','cb-int','cb-act'].forEach(function(id){document.getElementById(id).addEventListener('change',loadPartyRep);});
 document.getElementById('r-cc').addEventListener('change',loadCCRep);
 document.getElementById('r-cc-from').addEventListener('change',loadCCRep);
 document.getElementById('r-cc-to').addEventListener('change',loadCCRep);
