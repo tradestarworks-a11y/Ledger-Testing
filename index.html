@@ -374,8 +374,13 @@ function runEngine(party,allTxns,fromDate,toDate){
   var postMonths=freq==='Quarterly'?[3,6,9,12]:freq==='Half Yearly'?[3,9]:freq==='Yearly'?[3]:null;
   var openBal=parseFloat(party.open||0)*(party.otype==='Dr (they owe me)'?1:-1);
   var openDate=party.opendate||fromDate;
-  var startDate=(openDate<fromDate)?openDate:fromDate;
-  // When the statement "From" is later than the opening date we still compute the
+  // Start of history = earliest of (opening date, earliest transaction, From date),
+  // so EVERY entry before the From date is computed and rolled into the opening balance
+  // (rather than dropped) — even if it predates the party's opening date.
+  var startDate=openDate;
+  allTxns.forEach(function(t){if(t.pid===party.id&&t.date&&t.date<startDate)startDate=t.date;});
+  if(fromDate&&fromDate<startDate)startDate=fromDate;
+  // When the statement "From" is later than the start of history we still compute the
   // full history (for an accurate carried-forward balance + interest accrual) but
   // only DISPLAY rows on/after this window start.
   var winFrom=(fromDate&&fromDate>startDate)?fromDate:null;
