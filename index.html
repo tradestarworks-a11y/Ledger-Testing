@@ -306,9 +306,15 @@ var LEDGER=fbDB.collection('ledger').doc('main');
 <div id="share-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:9500;align-items:center;justify-content:center;padding:1rem">
   <div class="card" style="max-width:420px;width:100%">
     <div class="row-hd" style="margin-bottom:1rem"><h2 style="font-size:14px" id="share-title">Share ledger</h2><button class="btn btn-sm" id="share-close">✕</button></div>
-    <p style="font-size:12px;color:#888;margin-bottom:8px">View-only link — anyone with it can see this party's ledger (pick dates, export PDF). They cannot edit anything or see other parties.</p>
+    <p style="font-size:12px;color:#888;margin-bottom:8px">Permanent view-only link — anyone with it can see this party's ledger (pick dates, export PDF). They cannot edit anything or see other parties.</p>
     <input id="share-url" readonly style="width:100%;padding:8px 10px;border:1px solid #e0e0e0;border-radius:8px;font-size:12px;margin-bottom:10px">
-    <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn btn-danger" id="share-revoke">Revoke link</button><button class="btn btn-primary" id="share-copy">Copy link</button></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-bottom:12px"><button class="btn btn-danger" id="share-revoke">Revoke</button><button class="btn btn-primary" id="share-copy">Copy link</button></div>
+    <div style="border-top:1px solid #eee;padding-top:10px">
+      <div style="font-size:11px;color:#888;margin-bottom:4px">Access window</div>
+      <div id="share-status" style="font-size:12px;margin-bottom:8px"></div>
+      <p style="font-size:11px;color:#888;margin-bottom:6px">The link opens automatically on days 1–5 of each month. To let them view after that, grant one-time access:</p>
+      <div style="display:flex;gap:8px"><button class="btn btn-sm" id="share-g24">Allow 24 hours</button><button class="btn btn-sm" id="share-g48">Allow 48 hours</button></div>
+    </div>
   </div>
 </div>
 
@@ -334,10 +340,11 @@ var ePid=null,eCCid=null,eModeId=null,eTid=null,cType='payment';
 var SHARE=new URLSearchParams(location.search).get('share');
 
 function save(){LEDGER.set({parties:DB.parties,cc:DB.cc,modes:DB.modes,txns:DB.txns,shares:DB.shares||[]}).then(syncShares).catch(function(e){console.error('Save failed',e);alert('Could not save to cloud: '+e.message);});}
-// Keep each shared (view-only) party doc in sync with the latest data
-function writeShare(token,p){var txns=DB.txns.filter(function(t){return t.pid===p.id;});return fbDB.collection('shares').doc(token).set({pid:p.id,party:p,txns:txns});}
-function syncShares(){(DB.shares||[]).forEach(function(s){var p=DB.parties.find(function(x){return x.id===s.pid;});if(p)writeShare(s.token,p);else fbDB.collection('shares').doc(s.token).delete().catch(function(){});});}
-function randToken(){var a=new Uint8Array(16);if(window.crypto&&crypto.getRandomValues)crypto.getRandomValues(a);else for(var i=0;i<16;i++)a[i]=Math.floor(Math.random()*256);return Array.prototype.map.call(a,function(x){return('0'+x.toString(16)).slice(-2);}).join('');}
+// Keep each shared (view-only) party doc in sync with the latest data + access grant
+function writeShare(s,p){var txns=DB.txns.filter(function(t){return t.pid===p.id;});return fbDB.collection('shares').doc(s.token).set({pid:p.id,party:p,txns:txns,grantUntil:s.grantUntil||0});}
+function syncShares(){(DB.shares||[]).forEach(function(s){var p=DB.parties.find(function(x){return x.id===s.pid;});if(p)writeShare(s,p);else fbDB.collection('shares').doc(s.token).delete().catch(function(){});});}
+function slug(s){return (s||'').toLowerCase().replace(/[^a-z0-9]+/g,'').slice(0,12)||'party';}
+function shortId(){var c='abcdefghijklmnopqrstuvwxyz0123456789',a=new Uint8Array(8),r='';if(window.crypto&&crypto.getRandomValues)crypto.getRandomValues(a);else for(var i=0;i<8;i++)a[i]=Math.floor(Math.random()*256);for(var i=0;i<8;i++)r+=c.charAt(a[i]%36);return r;}
 function nameExists(list,name,exceptId){var n=(name||'').trim().toLowerCase();return list.some(function(x){return (x.name||'').trim().toLowerCase()===n&&x.id!==exceptId;});}
 function tod(){return new Date().toISOString().split('T')[0];}
 function fom(){var d=new Date();return new Date(d.getFullYear(),d.getMonth(),1).toISOString().split('T')[0];}
@@ -889,7 +896,7 @@ function initViewer(token){
     var fe=document.getElementById('v-from'),te=document.getElementById('v-to');
     fe.value=(VSHARE.party&&VSHARE.party.opendate)||fom();te.value=tod();
     renderViewer();
-  }).catch(function(e){document.getElementById('v-body').innerHTML='<div class="card"><div class="empty">Could not load: '+e.message+'</div></div>';});
+  }).catch(function(e){var msg=(e&&e.code==='permission-denied')?'This shared ledger is open only during the first 5 days of each month, or with temporary access from the owner. Please ask the owner to grant you access.':'Could not load: '+(e&&e.message||e);document.getElementById('v-body').innerHTML='<div class="card"><div class="empty">'+msg+'</div></div>';});
 }
 function viewerRes(){return runEngine(VSHARE.party,VSHARE.txns||[],document.getElementById('v-from').value,document.getElementById('v-to').value);}
 function renderViewer(){
@@ -916,17 +923,27 @@ document.getElementById('v-to').addEventListener('change',renderViewer);
 document.getElementById('v-pdf').addEventListener('click',function(){if(VSHARE)partyLedgerPDF(VSHARE.party,viewerRes(),document.getElementById('v-from').value,document.getElementById('v-to').value);});
 // ---- Share view-only link (owner) ----
 var shareModalPid=null;
+function shareStatusText(s){
+  var now=Date.now();
+  if(s.grantUntil&&s.grantUntil>now)return '<span style="color:#16a34a">Temporary access ACTIVE</span> until '+new Date(s.grantUntil).toLocaleString();
+  if(new Date().getDate()<=5)return '<span style="color:#16a34a">OPEN now</span> (first 5 days of the month).';
+  return '<span style="color:#dc2626">CLOSED</span> until the 1st. Grant temporary access below if needed.';
+}
+function updateShareStatus(){var s=(DB.shares||[]).find(function(x){return x.pid===shareModalPid;});if(s)document.getElementById('share-status').innerHTML=shareStatusText(s);}
 function openShareModal(p){
   var s=(DB.shares||[]).find(function(x){return x.pid===p.id;});
-  var token=s?s.token:randToken();
-  if(!s){DB.shares=DB.shares||[];DB.shares.push({token:token,pid:p.id});save();}else{writeShare(token,p);}
+  if(!s){s={token:slug(p.name)+'-'+shortId(),pid:p.id};DB.shares=DB.shares||[];DB.shares.push(s);save();}else{writeShare(s,p);}
   shareModalPid=p.id;
   document.getElementById('share-title').textContent="Share "+p.name+"'s ledger";
-  document.getElementById('share-url').value=location.origin+location.pathname+'?share='+token;
+  document.getElementById('share-url').value=location.origin+location.pathname+'?share='+s.token;
+  updateShareStatus();
   document.getElementById('share-modal').style.display='flex';
 }
+function grantAccess(hours){var s=(DB.shares||[]).find(function(x){return x.pid===shareModalPid;});if(!s)return;s.grantUntil=Date.now()+hours*3600*1000;save();updateShareStatus();alert('Temporary access granted for '+hours+' hours.');}
 document.getElementById('share-close').addEventListener('click',function(){document.getElementById('share-modal').style.display='none';});
 document.getElementById('share-copy').addEventListener('click',function(){var i=document.getElementById('share-url');i.select();try{navigator.clipboard.writeText(i.value);}catch(e){try{document.execCommand('copy');}catch(_){}}var b=document.getElementById('share-copy');b.textContent='Copied!';setTimeout(function(){b.textContent='Copy link';},1500);});
+document.getElementById('share-g24').addEventListener('click',function(){grantAccess(24);});
+document.getElementById('share-g48').addEventListener('click',function(){grantAccess(48);});
 document.getElementById('share-revoke').addEventListener('click',function(){if(!shareModalPid)return;var s=(DB.shares||[]).find(function(x){return x.pid===shareModalPid;});if(s){fbDB.collection('shares').doc(s.token).delete().catch(function(){});DB.shares=DB.shares.filter(function(x){return x.pid!==shareModalPid;});save();}document.getElementById('share-modal').style.display='none';alert('Link revoked — it will no longer open.');});
 document.getElementById('auth-btn').addEventListener('click',submitAuth);
 document.getElementById('auth-pass').addEventListener('keydown',function(e){if(e.key==='Enter')submitAuth();});
