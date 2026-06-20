@@ -818,28 +818,36 @@ document.getElementById('imp-file').addEventListener('change',function(e){
   reader.readAsArrayBuffer(file);
 });
 function processImportRows(rows){
-  var added=[],errors=[],i=0;
+  var added=[],errors=[],i=0,newCCs=[],newModes=[];
+  var ccMap={};DB.cc.forEach(function(c){ccMap[(c.name||'').trim().toLowerCase()]=c.id;});
+  var modeMap={};DB.modes.forEach(function(m){modeMap[(m.name||'').trim().toLowerCase()]=m.name;});
   rows.forEach(function(row,idx){
     var rn=idx+2;
     var pname=sget(row,'party'),amtRaw=sget(row,'amount'),typeRaw=sget(row,'type').toLowerCase();
-    if(!pname&&!amtRaw&&!typeRaw&&!sget(row,'narration'))return; // blank row
+    if(!pname&&!amtRaw&&!typeRaw&&!sget(row,'narration')&&!sget(row,'cost center'))return; // blank row
     var party=DB.parties.find(function(p){return (p.name||'').trim().toLowerCase()===pname.toLowerCase();});
     if(!party){errors.push('Row '+rn+': party "'+pname+'" not found');return;}
     var date=parseImportDate(rawget(row,'date'));if(!date){errors.push('Row '+rn+': invalid date (use dd-mm-yyyy)');return;}
     var tt=typeRaw.indexOf('rec')===0?'receipt':(typeRaw.indexOf('pay')===0?'payment':'');
     if(!tt){errors.push('Row '+rn+': Type must be Payment or Receipt');return;}
     var amt=parseFloat(amtRaw.replace(/[^0-9.\-]/g,''));if(!(amt>0)){errors.push('Row '+rn+': invalid amount');return;}
-    var modeName=sget(row,'mode')||(DB.modes[0]?DB.modes[0].name:'Bank');
+    var modeName=sget(row,'mode');
+    if(modeName){var mk=modeName.toLowerCase();if(modeMap[mk])modeName=modeMap[mk];else{var mid=String(Date.now())+'_m'+newModes.length;newModes.push({id:mid,name:modeName});modeMap[mk]=modeName;}}
+    else modeName=(DB.modes[0]?DB.modes[0].name:'Bank');
     var ccName=sget(row,'cost center'),ccid='';
-    if(ccName){var cc=DB.cc.find(function(c){return (c.name||'').trim().toLowerCase()===ccName.toLowerCase();});ccid=cc?cc.id:'';}
+    if(ccName){var ck=ccName.toLowerCase();if(ccMap[ck])ccid=ccMap[ck];else{ccid=String(Date.now())+'_c'+newCCs.length;newCCs.push({id:ccid,name:ccName,desc:''});ccMap[ck]=ccid;}}
     added.push({id:String(Date.now())+'_'+(i++),pid:party.id,date:date,amt:amt,tt:tt,mode:modeName,ccid:ccid,narr:sget(row,'narration')});
   });
   if(!added.length){alert('No valid rows found to import.'+(errors.length?'\n\n'+errors.slice(0,15).join('\n'):''));return;}
   var msg='Import '+added.length+' transaction(s)?';
+  if(newCCs.length)msg+='\n'+newCCs.length+' new cost center(s) will be created: '+newCCs.map(function(c){return c.name;}).join(', ');
+  if(newModes.length)msg+='\n'+newModes.length+' new payment mode(s) will be created: '+newModes.map(function(m){return m.name;}).join(', ');
   if(errors.length)msg+='\n\n'+errors.length+' row(s) will be skipped:\n'+errors.slice(0,15).join('\n')+(errors.length>15?'\n…':'');
   if(!confirm(msg))return;
+  if(newCCs.length)DB.cc=DB.cc.concat(newCCs);
+  if(newModes.length)DB.modes=DB.modes.concat(newModes);
   DB.txns=DB.txns.concat(added);save();renderTxns();renderDash();
-  alert('Imported '+added.length+' transaction(s).'+(errors.length?' Skipped '+errors.length+'.':''));
+  alert('Imported '+added.length+' transaction(s).'+(newCCs.length?' Created '+newCCs.length+' cost center(s).':'')+(errors.length?' Skipped '+errors.length+'.':''));
 }
 document.getElementById('f-party').addEventListener('change',renderTxns);
 document.getElementById('f-type').addEventListener('change',renderTxns);
