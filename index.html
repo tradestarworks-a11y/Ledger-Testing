@@ -84,16 +84,42 @@ td{padding:7px 8px;border-bottom:1px solid #f5f5f5;vertical-align:middle}
 .int-toggle input[type=checkbox]{width:16px;height:16px;cursor:pointer}
 @media(max-width:600px){.grid2,.grid3,.grid4{grid-template-columns:1fr}.mg{grid-template-columns:1fr}.start-wrap{flex-direction:column;align-items:center}}
 </style>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script>
+var firebaseConfig={apiKey:"AIzaSyB2OyjkHEKsTA7lFmHKpRAxj3ZAPmdOC48",authDomain:"myproject987z.firebaseapp.com",projectId:"myproject987z",storageBucket:"myproject987z.firebasestorage.app",messagingSenderId:"523791319152",appId:"1:523791319152:web:32f8b5b835bd762a9a34b5"};
+firebase.initializeApp(firebaseConfig);
+var fbAuth=firebase.auth();
+var fbDB=firebase.firestore();
+fbDB.enablePersistence({synchronizeTabs:true}).catch(function(){});
+var LEDGER=fbDB.collection('ledger').doc('main');
+</script>
 </head>
 <body>
-<div class="app">
+<div id="auth-gate" style="position:fixed;inset:0;background:#f5f5f5;display:none;align-items:center;justify-content:center;z-index:10000;padding:1rem">
+  <div class="card" style="max-width:340px;width:100%">
+    <h2 id="auth-title" style="font-size:16px;margin-bottom:4px">Ledger login</h2>
+    <p id="auth-sub" style="font-size:12px;color:#888;margin-bottom:1rem"></p>
+    <div class="fg"><label>Email</label><input id="auth-user" type="email" autocomplete="username"></div>
+    <div class="fg"><label>Password</label><input id="auth-pass" type="password" autocomplete="current-password"></div>
+    <div class="fg" id="auth-confirm-wrap" style="display:none"><label>Confirm password</label><input id="auth-pass2" type="password"></div>
+    <div id="auth-err" style="color:#dc2626;font-size:12px;margin-bottom:8px;display:none"></div>
+    <button class="btn btn-primary" id="auth-btn" style="width:100%">Sign in</button>
+    <div style="display:flex;gap:12px;justify-content:center;margin-top:10px">
+      <button id="auth-toggle" style="border:none;background:none;color:#2563eb;font-size:12px;cursor:pointer;font-family:inherit">New here? Create account</button>
+      <button id="auth-forgot" style="border:none;background:none;color:#888;font-size:12px;cursor:pointer;font-family:inherit">Forgot password?</button>
+    </div>
+  </div>
+</div>
+<div class="app" id="app" style="display:none">
 <h1 style="font-size:18px;font-weight:600;margin-bottom:1.5rem">Ledger Management System</h1>
 <div class="nav">
   <button class="nav-btn active" id="nt-dash">Dashboard</button>
-  <button class="nav-btn" id="nt-parties">Parties</button>
-  <button class="nav-btn" id="nt-cc">Cost centers</button>
+  <button class="nav-btn" id="nt-masters">Masters</button>
   <button class="nav-btn" id="nt-txn">Transactions</button>
   <button class="nav-btn" id="nt-rep">Reports</button>
+  <button class="nav-btn" id="nt-lock" style="margin-left:auto">🔒 Lock</button>
 </div>
 
 <div id="sec-dash" class="section active">
@@ -101,7 +127,10 @@ td{padding:7px 8px;border-bottom:1px solid #f5f5f5;vertical-align:middle}
   <div class="card"><div class="row-hd"><h2>Party balances</h2></div><div id="d-parties"></div></div>
 </div>
 
-<div id="sec-parties" class="section">
+<div id="sec-masters" class="section">
+  <div class="row-hd"><h2>Masters</h2></div>
+  <div class="rtabs"><button class="rtab on" id="mt-parties">Parties</button><button class="rtab" id="mt-cc">Cost centers</button><button class="rtab" id="mt-modes">Payment modes</button></div>
+  <div id="m-parties">
   <div class="row-hd"><h2>Party master</h2><button class="btn btn-primary" id="b-addparty">+ Add party</button></div>
   <div id="party-form" class="card" style="display:none">
     <div class="row-hd" style="margin-bottom:1rem"><h2 id="pf-title" style="font-size:14px">Add party</h2></div>
@@ -120,18 +149,34 @@ td{padding:7px 8px;border-bottom:1px solid #f5f5f5;vertical-align:middle}
       <div class="fg"><label>Opening date</label><input id="p-opendate" type="date"></div>
       <div class="fg"><label>Notes</label><input id="p-notes" placeholder="Optional"></div>
     </div>
+    <div class="grid2">
+      <div class="fg"><label>Interest JV</label>
+        <label class="int-toggle" style="padding:8px 0"><input type="checkbox" id="p-intjv" checked> Apply interest JV to this party</label>
+      </div>
+      <div class="fg" id="p-jvfreq-wrap"><label>JV frequency</label>
+        <select id="p-jvfreq"><option>Monthly</option><option>Quarterly</option><option>Half Yearly</option><option>Yearly</option></select>
+      </div>
+    </div>
     <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn" id="b-cancelparty">Cancel</button><button class="btn btn-primary" id="b-saveparty">Save party</button></div>
   </div>
   <div class="card"><div id="party-list"></div></div>
-</div>
-
-<div id="sec-cc" class="section">
+  </div>
+  <div id="m-cc" style="display:none">
   <div class="row-hd"><h2>Cost centers</h2><button class="btn btn-primary" id="b-addcc">+ Add cost center</button></div>
   <div id="cc-form" class="card" style="display:none">
     <div class="grid2"><div class="fg"><label>Name</label><input id="cc-name" placeholder="e.g. Office, Travel"></div><div class="fg"><label>Description</label><input id="cc-desc" placeholder="Optional"></div></div>
     <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn" id="b-cancelcc">Cancel</button><button class="btn btn-primary" id="b-savecc">Save</button></div>
   </div>
   <div class="card"><div id="cc-list"></div></div>
+  </div>
+  <div id="m-modes" style="display:none">
+  <div class="row-hd"><h2>Payment modes</h2><button class="btn btn-primary" id="b-addmode">+ Add payment mode</button></div>
+  <div id="mode-form" class="card" style="display:none">
+    <div class="grid2"><div class="fg"><label>Name</label><input id="mode-name" placeholder="e.g. UPI, Cheque, NEFT"></div></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn" id="b-cancelmode">Cancel</button><button class="btn btn-primary" id="b-savemode">Save</button></div>
+  </div>
+  <div class="card"><div id="mode-list"></div></div>
+  </div>
 </div>
 
 <div id="sec-txn" class="section">
@@ -163,14 +208,15 @@ td{padding:7px 8px;border-bottom:1px solid #f5f5f5;vertical-align:middle}
         <div class="fg"><label>Narration</label><input id="t-narr" placeholder="e.g. Loan given"></div>
       </div>
       <div class="fg"><label>Payment mode</label>
-        <div class="modes"><button class="mbtn on" id="mb-bank">Bank</button><button class="mbtn" id="mb-cash">Cash</button><button class="mbtn" id="mb-petty">Petty cash</button></div>
+        <div class="il"><select id="t-mode"></select><button class="btn btn-sm" id="b-qmode">+</button></div>
+        <div class="quick-add-bar" id="qa-mode"><input id="qa-mode-input" placeholder="New payment mode"><button class="ok-btn" id="qa-mode-ok">Add</button><button id="qa-mode-cancel">Cancel</button></div>
       </div>
       <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn" id="b-canceltxn">Cancel</button><button class="btn btn-primary" id="b-savetxn">Save</button></div>
     </div>
   </div>
   <div class="card">
     <div class="row-hd"><h2>Recent 10 transactions</h2>
-      <div style="display:flex;gap:6px;flex-wrap:wrap"><select class="fsel" id="f-party"><option value="">All parties</option></select><select class="fsel" id="f-type"><option value="">All types</option><option value="payment">Payment</option><option value="receipt">Receipt</option></select><select class="fsel" id="f-mode"><option value="">All modes</option><option>Bank</option><option>Cash</option><option>Petty cash</option></select></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap"><select class="fsel" id="f-party"><option value="">All parties</option></select><select class="fsel" id="f-type"><option value="">All types</option><option value="payment">Payment</option><option value="receipt">Receipt</option></select><select class="fsel" id="f-mode"><option value="">All modes</option></select></div>
     </div>
     <div id="txn-list"></div>
   </div>
@@ -186,10 +232,6 @@ td{padding:7px 8px;border-bottom:1px solid #f5f5f5;vertical-align:middle}
         <div class="fg"><label style="font-size:11px">From</label><input id="r-from" type="date"></div>
         <div class="fg"><label style="font-size:11px">To</label><input id="r-to" type="date"></div>
         <div style="display:flex;gap:6px;align-self:flex-end"><button class="btn btn-sm" id="b-pcsv">Excel</button><button class="btn btn-sm" id="b-ppdf">PDF</button></div>
-      </div>
-      <div class="int-toggle">
-        <input type="checkbox" id="show-int-detail" checked>
-        <label for="show-int-detail" style="cursor:pointer">Show accrual segments (days held + interest per segment)</label>
       </div>
     </div>
     <div id="rep-party-body"></div>
@@ -210,42 +252,54 @@ td{padding:7px 8px;border-bottom:1px solid #f5f5f5;vertical-align:middle}
     <div class="row-hd" style="margin-bottom:1rem"><h2 style="font-size:14px">Edit transaction</h2><button class="btn btn-sm" id="b-closeedit">✕</button></div>
     <div class="grid2"><div class="fg"><label>Party</label><select id="e-party"></select></div><div class="fg"><label>Date</label><input id="e-date" type="date"></div></div>
     <div class="grid3"><div class="fg"><label>Amount (₹)</label><input id="e-amt" type="number"></div><div class="fg"><label>Cost center</label><select id="e-cc"></select></div><div class="fg"><label>Narration</label><input id="e-narr"></div></div>
-    <div class="grid2"><div class="fg"><label>Type</label><select id="e-type"><option value="payment">Payment</option><option value="receipt">Receipt</option></select></div><div class="fg"><label>Mode</label><select id="e-mode"><option>Bank</option><option>Cash</option><option>Petty cash</option></select></div></div>
+    <div class="grid2"><div class="fg"><label>Type</label><select id="e-type"><option value="payment">Payment</option><option value="receipt">Receipt</option></select></div><div class="fg"><label>Mode</label><select id="e-mode"></select></div></div>
     <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn" id="b-canceledit">Cancel</button><button class="btn btn-primary" id="b-saveedit">Save changes</button></div>
   </div>
 </div>
 </div>
 
 <script>
-var DB=JSON.parse(localStorage.getItem('ledger_v12')||'{"parties":[],"cc":[],"txns":[]}');
-if(!DB.cc)DB.cc=[];
-var ePid=null,eCCid=null,eTid=null,cType='payment',cMode='Bank';
+var DB={parties:[],cc:[],modes:[],txns:[]};
+var DEFAULT_MODES=[{id:'m1',name:'Bank'},{id:'m2',name:'Cash'},{id:'m3',name:'Petty cash'}];
+var ePid=null,eCCid=null,eModeId=null,eTid=null,cType='payment';
 
-function save(){localStorage.setItem('ledger_v12',JSON.stringify(DB));}
+function save(){LEDGER.set({parties:DB.parties,cc:DB.cc,modes:DB.modes,txns:DB.txns}).catch(function(e){console.error('Save failed',e);alert('Could not save to cloud: '+e.message);});}
+function nameExists(list,name,exceptId){var n=(name||'').trim().toLowerCase();return list.some(function(x){return (x.name||'').trim().toLowerCase()===n&&x.id!==exceptId;});}
 function tod(){return new Date().toISOString().split('T')[0];}
 function fom(){var d=new Date();return new Date(d.getFullYear(),d.getMonth(),1).toISOString().split('T')[0];}
 function fd(iso){if(!iso)return'—';var p=iso.split('-');return p[2]+'-'+p[1]+'-'+p[0];}
 function fa(n){return'₹'+parseFloat(n||0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});}
 function diffDays(a,b){return Math.round((new Date(b)-new Date(a))/(1000*60*60*24));}
-function lastDayOfMonth(iso){var d=new Date(iso);return new Date(d.getFullYear(),d.getMonth()+1,0).toISOString().split('T')[0];}
+function lastDayOfMonth(iso){var p=iso.split('-');return new Date(Date.UTC(+p[0],+p[1],0)).toISOString().split('T')[0];}
 function r2(n){return Math.round(n*100)/100;}
 
 function runEngine(party,allTxns,fromDate,toDate){
   var dailyRate=parseFloat(party.rate||24)/100/365;
   var isCompound=(party.itype==='Compound');
+  // Interest JV: only post interest when enabled for this party (undefined=on, for
+  // backward compatibility). Posting month-ends per frequency, anchored to the
+  // Indian financial year (Apr-Mar). postMonths=null means every month-end.
+  var jvOn=(party.intjv!==false);
+  var freq=party.jvfreq||'Monthly';
+  var postMonths=freq==='Quarterly'?[3,6,9,12]:freq==='Half Yearly'?[3,9]:freq==='Yearly'?[3]:null;
   var openBal=parseFloat(party.open||0)*(party.otype==='Dr (they owe me)'?1:-1);
   var openDate=party.opendate||fromDate;
   var startDate=(openDate<fromDate)?openDate:fromDate;
+  // When the statement "From" is later than the opening date we still compute the
+  // full history (for an accurate carried-forward balance + interest accrual) but
+  // only DISPLAY rows on/after this window start.
+  var winFrom=(fromDate&&fromDate>startDate)?fromDate:null;
   var txns=allTxns.filter(function(t){return t.pid===party.id&&t.date>=startDate&&t.date<=toDate;}).sort(function(a,b){return a.date.localeCompare(b.date);});
   var dateMap={};
   dateMap[startDate]=1;dateMap[toDate]=1;
+  if(winFrom)dateMap[winFrom]=1;
   txns.forEach(function(t){dateMap[t.date]=1;});
   var cur=new Date(startDate);
   while(true){
     var me=lastDayOfMonth(cur.toISOString().split('T')[0]);
     if(me>toDate)break;
     dateMap[me]=1;
-    cur=new Date(cur.getFullYear(),cur.getMonth()+1,1);
+    cur=new Date(Date.UTC(cur.getUTCFullYear(),cur.getUTCMonth()+1,1));
     if(cur.toISOString().split('T')[0]>toDate)break;
   }
   var events=Object.keys(dateMap).sort();
@@ -253,34 +307,68 @@ function runEngine(party,allTxns,fromDate,toDate){
   if(Math.abs(openBal)>0.001)ledger.push({rowType:'opening',date:startDate,label:'Opening balance',debit:openBal<0?Math.abs(openBal):0,credit:openBal>0?openBal:0,days:'',segInt:'',balance:openBal});
   for(var i=0;i<events.length;i++){
     var ev=events[i];
-    if(ev===startDate&&i===0)continue;
+    // Note: on the first event (ev===startDate) days===0 and monthAccrual===0, so the
+    // segment/interest blocks below are natural no-ops. We must NOT skip the iteration,
+    // otherwise a transaction dated on the start/From date would be dropped.
     var days=diffDays(prevDate,ev);
     var isMe=(ev===lastDayOfMonth(ev));
+    var isPost=isMe&&(!postMonths||postMonths.indexOf(+ev.split('-')[1])>=0);
     var evTxns=txns.filter(function(t){return t.date===ev;});
-    if(days>0&&Math.abs(balance)>0.001){
+    if(jvOn&&days>0&&Math.abs(balance)>0.001){
       var segInt=r2(Math.abs(balance)*dailyRate*days);
       monthAccrual+=segInt;
-      ledger.push({rowType:'segment',date:ev,label:fd(prevDate)+' → '+fd(ev),debit:'',credit:'',days:days,segInt:segInt,balance:balance});
+      ledger.push({rowType:'segment',date:ev,segFrom:prevDate,label:fd(prevDate)+' → '+fd(ev),debit:'',credit:'',days:days,segInt:segInt,balance:balance});
     }
-    if(isMe&&monthAccrual>0.001){
-      var posted=r2(monthAccrual);
-      if(isCompound)balance=r2(balance+(balance>=0?posted:-posted));
-      totalInt=r2(totalInt+posted);
-      ledger.push({rowType:'interest',date:ev,label:'Interest posted',debit:'',credit:posted,days:'',segInt:'',balance:balance,monthTotal:posted});
-      monthAccrual=0;
-    }
+    // Post the day's transactions BEFORE the month-end interest so the interest JV is
+    // always the last entry of the month (any transaction dated on month-end stays above
+    // it). Interest already accrued on the pre-transaction balance via the segment above,
+    // so the amount and closing balance are unchanged by this ordering.
     evTxns.forEach(function(t){
       var isRec=t.tt==='receipt';
       balance=r2(balance+(isRec?parseFloat(t.amt):-parseFloat(t.amt)));
       ledger.push({rowType:t.tt,date:ev,label:fd(ev),debit:isRec?0:parseFloat(t.amt),credit:isRec?parseFloat(t.amt):0,days:'',segInt:'',balance:balance,narr:t.narr,mode:t.mode,ccid:t.ccid,id:t.id});
     });
+    if(jvOn&&isPost&&monthAccrual>0.001){
+      var posted=r2(monthAccrual);
+      if(isCompound)balance=r2(balance+(balance>=0?posted:-posted));
+      totalInt=r2(totalInt+posted);
+      ledger.push({rowType:'interest',date:ev,label:'Interest posted',debit:'',credit:posted,segInt:'',balance:balance,monthTotal:posted});
+      monthAccrual=0;
+    }
     prevDate=ev;
+  }
+  // Fold each accrual segment's days held + interest accrued onto the entry whose running
+  // balance the interest was calculated on (the last entry on/before the segment's start
+  // date), then drop the standalone segment rows. This shows the days/interest forward from
+  // that balance line, instead of on the next line.
+  ledger.forEach(function(seg){
+    if(seg.rowType!=='segment')return;
+    var target=null;
+    ledger.forEach(function(c){
+      if(c.rowType!=='segment'&&c.date<=seg.segFrom)target=c;
+    });
+    if(target){target.accrDays=(target.accrDays||0)+seg.days;target.accrInt=r2((target.accrInt||0)+seg.segInt);}
+  });
+  ledger=ledger.filter(function(r){return r.rowType!=='segment';});
+  if(winFrom){
+    var carried=openBal,display=[];
+    ledger.forEach(function(rr){
+      var isPre=(rr.date<winFrom)||(rr.rowType==='segment'&&rr.date<=winFrom);
+      if(isPre)carried=rr.balance;else display.push(rr);
+    });
+    if(Math.abs(carried)>0.001)display.unshift({rowType:'opening',date:winFrom,label:'Opening balance',debit:carried<0?Math.abs(carried):0,credit:carried>0?carried:0,days:'',segInt:'',balance:carried});
+    ledger=display;
+    totalInt=r2(display.filter(function(r){return r.rowType==='interest';}).reduce(function(s,r){return s+r.monthTotal;},0));
   }
   return{ledger:ledger,totalInterest:totalInt,closingBalance:balance};
 }
 
 function getSum(p){
-  var res=runEngine(p,DB.txns,p.opendate||tod(),tod());
+  // Span the full ledger so the summary never drops transactions dated before the opening
+  // date or after today's clock: from = min(opendate, earliest txn), to = max(today, latest txn).
+  var from=p.opendate||tod(),to=tod();
+  DB.txns.forEach(function(t){if(t.pid===p.id){if(t.date<from)from=t.date;if(t.date>to)to=t.date;}});
+  var res=runEngine(p,DB.txns,from,to);
   return{bal:res.closingBalance,interest:res.totalInterest};
 }
 
@@ -288,18 +376,29 @@ function showTab(id){
   document.querySelectorAll('.section').forEach(function(s){s.classList.remove('active');});
   document.querySelectorAll('.nav-btn').forEach(function(b){b.classList.remove('active');});
   document.getElementById('sec-'+id).classList.add('active');
-  var map={dash:'nt-dash',parties:'nt-parties',cc:'nt-cc',txn:'nt-txn',rep:'nt-rep'};
+  var map={dash:'nt-dash',masters:'nt-masters',txn:'nt-txn',rep:'nt-rep'};
   document.getElementById(map[id]).classList.add('active');
 }
 
 document.getElementById('nt-dash').addEventListener('click',function(){showTab('dash');renderDash();});
-document.getElementById('nt-parties').addEventListener('click',function(){showTab('parties');renderParties();});
-document.getElementById('nt-cc').addEventListener('click',function(){showTab('cc');renderCC();});
-document.getElementById('nt-txn').addEventListener('click',function(){showTab('txn');fillDD('f-party','all');fillDD('t-party','sel');fillCCDD('t-cc','none');renderTxns();backLand();});
-document.getElementById('nt-rep').addEventListener('click',function(){showTab('rep');fillDD('r-party','sel');fillCCDD('r-cc','all');if(!document.getElementById('r-from').value)document.getElementById('r-from').value=fom();if(!document.getElementById('r-to').value)document.getElementById('r-to').value=tod();if(!document.getElementById('r-cc-from').value)document.getElementById('r-cc-from').value=fom();if(!document.getElementById('r-cc-to').value)document.getElementById('r-cc-to').value=tod();});
+document.getElementById('nt-masters').addEventListener('click',function(){showTab('masters');renderParties();renderCC();renderModes();});
+function showMaster(which){
+  document.getElementById('m-parties').style.display=which==='parties'?'':'none';
+  document.getElementById('m-cc').style.display=which==='cc'?'':'none';
+  document.getElementById('m-modes').style.display=which==='modes'?'':'none';
+  document.getElementById('mt-parties').className='rtab'+(which==='parties'?' on':'');
+  document.getElementById('mt-cc').className='rtab'+(which==='cc'?' on':'');
+  document.getElementById('mt-modes').className='rtab'+(which==='modes'?' on':'');
+}
+document.getElementById('mt-parties').addEventListener('click',function(){showMaster('parties');renderParties();});
+document.getElementById('mt-cc').addEventListener('click',function(){showMaster('cc');renderCC();});
+document.getElementById('mt-modes').addEventListener('click',function(){showMaster('modes');renderModes();});
+document.getElementById('nt-txn').addEventListener('click',function(){showTab('txn');fillDD('f-party','all');fillDD('t-party','sel');fillCCDD('t-cc','none');fillModeDD('f-mode','all');fillModeDD('t-mode','sel');renderTxns();backLand();});
+document.getElementById('nt-rep').addEventListener('click',function(){showTab('rep');fillDD('r-party','sel');fillCCDD('r-cc','all');var _rp=DB.parties.find(function(x){return x.id===document.getElementById('r-party').value;});if(_rp&&_rp.opendate)document.getElementById('r-from').value=_rp.opendate;if(!document.getElementById('r-from').value)document.getElementById('r-from').value=fom();if(!document.getElementById('r-to').value)document.getElementById('r-to').value=tod();if(!document.getElementById('r-cc-from').value)document.getElementById('r-cc-from').value=fom();if(!document.getElementById('r-cc-to').value)document.getElementById('r-cc-to').value=tod();loadPartyRep();loadCCRep();});
 
 function fillDD(id,mode){var el=document.getElementById(id);if(!el)return;var cur=el.value;el.innerHTML=(mode==='all'?'<option value="">All parties</option>':'<option value="">Select party</option>')+DB.parties.map(function(p){return'<option value="'+p.id+'">'+p.name+'</option>';}).join('');el.value=cur;}
 function fillCCDD(id,mode){var el=document.getElementById(id);if(!el)return;var cur=el.value;el.innerHTML=(mode==='all'?'<option value="">All cost centers</option>':'<option value="">None</option>')+DB.cc.map(function(c){return'<option value="'+c.id+'">'+c.name+'</option>';}).join('');el.value=cur;}
+function fillModeDD(id,mode){var el=document.getElementById(id);if(!el)return;var cur=el.value;el.innerHTML=(mode==='all'?'<option value="">All modes</option>':'')+DB.modes.map(function(m){return'<option>'+m.name+'</option>';}).join('');el.value=cur;}
 
 function renderDash(){
   var dr=0,cr=0,it=0;
@@ -318,7 +417,7 @@ function renderParties(){
     var r=getSum(p);var d=r.bal>=0;var c=d?'#dc2626':'#16a34a';
     var row=document.createElement('div');row.className='prow';
     row.innerHTML='<div><div style="font-weight:500">'+p.name+' <span class="tag">'+p.type+'</span></div>'+
-      '<div style="font-size:11px;color:#888;margin-top:2px">'+(p.rate||24)+'% p.a. · '+(p.itype||'Compound')+(p.phone?' · '+p.phone:'')+'</div></div>'+
+      '<div style="font-size:11px;color:#888;margin-top:2px">'+(p.rate||24)+'% p.a. · '+(p.itype||'Compound')+' · '+(p.intjv===false?'No interest JV':'JV '+(p.jvfreq||'Monthly'))+(p.phone?' · '+p.phone:'')+'</div></div>'+
       '<div style="display:flex;align-items:center;gap:8px">'+
       '<div style="text-align:right"><div style="font-weight:500;color:'+c+'">'+fa(Math.abs(r.bal))+' '+(d?'Dr':'Cr')+'</div><div style="font-size:11px;color:#888">Int: '+fa(r.interest)+'</div></div>'+
       '<button class="btn btn-sm">Edit</button><button class="btn btn-sm btn-danger">Del</button></div>';
@@ -341,6 +440,22 @@ function renderCC(){
     var btns=row.querySelectorAll('button');
     btns[0].addEventListener('click',function(){editCC(c.id);});
     btns[1].addEventListener('click',function(){showConfirm(row,'Delete '+c.name+'?',function(){DB.cc=DB.cc.filter(function(x){return x.id!==c.id;});DB.txns=DB.txns.map(function(t){if(t.ccid===c.id)t.ccid='';return t;});save();renderCC();});});
+    container.appendChild(row);
+  });
+}
+
+function renderModes(){
+  var container=document.getElementById('mode-list');
+  if(!DB.modes.length){container.innerHTML='<div class="empty">No payment modes yet.</div>';return;}
+  container.innerHTML='';
+  DB.modes.forEach(function(m){
+    var n=DB.txns.filter(function(t){return t.mode===m.name;}).length;
+    var row=document.createElement('div');row.className='prow';
+    row.innerHTML='<div><div style="font-weight:500">'+m.name+'</div><div style="font-size:11px;color:#888;margin-top:2px">'+n+' txns</div></div>'+
+      '<div style="display:flex;gap:8px"><button class="btn btn-sm">Edit</button><button class="btn btn-sm btn-danger">Del</button></div>';
+    var btns=row.querySelectorAll('button');
+    btns[0].addEventListener('click',function(){editMode(m.id);});
+    btns[1].addEventListener('click',function(){showConfirm(row,'Delete '+m.name+'?',function(){DB.modes=DB.modes.filter(function(x){return x.id!==m.id;});save();renderModes();fillModeDD('t-mode','sel');fillModeDD('f-mode','all');});});
     container.appendChild(row);
   });
 }
@@ -375,14 +490,15 @@ function renderTxns(){
 
 function loadPartyRep(){
   var pid=document.getElementById('r-party').value;
-  var showSeg=document.getElementById('show-int-detail').checked;
   var body=document.getElementById('rep-party-body');
   if(!pid){body.innerHTML='';return;}
   var party=DB.parties.find(function(p){return p.id===pid;});if(!party)return;
-  // Auto-set from date to party opendate when party is selected
   var fromEl=document.getElementById('r-from');
   var toEl=document.getElementById('r-to');
-  if(party.opendate&&(!fromEl.value||fromEl.value>party.opendate))fromEl.value=party.opendate;
+  // Safety net only: default an empty From to the opening date. The From->opendate
+  // snap on party selection happens in the r-party change handler so that a user
+  // who narrows the From date afterwards isn't overridden on every re-render.
+  if(party.opendate&&!fromEl.value)fromEl.value=party.opendate;
   if(!toEl.value)toEl.value=tod();
   var from=fromEl.value;
   var to=toEl.value;
@@ -391,17 +507,16 @@ function loadPartyRep(){
   body.innerHTML='<div class="mg">'+
     '<div class="mc"><div class="ml">Closing balance</div><div class="mv" style="color:'+(isdr?'#dc2626':'#16a34a')+'">'+fa(Math.abs(res.closingBalance))+' '+(isdr?'Dr':'Cr')+'</div></div>'+
     '<div class="mc"><div class="ml">Total interest posted</div><div class="mv" style="color:#2563eb">'+fa(res.totalInterest)+'</div></div>'+
-    '<div class="mc"><div class="ml">Engine</div><div class="mv" style="font-size:12px">'+(party.rate||24)+'% p.a. · Balance×(rate÷365)×days · '+(party.itype||'Compound')+'</div></div>'+
     '</div>';
   var card=document.createElement('div');card.className='card';
   card.innerHTML='<div style="margin-bottom:10px"><div style="font-weight:500">'+party.name+'</div>'+
-    '<div style="font-size:11px;color:#888">'+(party.itype||'Compound')+' interest · '+(party.rate||24)+'% p.a. · Interest = Balance × ('+(party.rate||24)+'÷365÷100) × Days · '+fd(from)+' to '+fd(to)+'</div></div>';
+    '<div style="font-size:11px;color:#888">'+fd(from)+' to '+fd(to)+'</div></div>';
   var wrap=document.createElement('div');wrap.style.overflowX='auto';
   var tbl=document.createElement('table');tbl.style.tableLayout='auto';
-  tbl.innerHTML='<thead><tr><th>Date / Period</th><th>Type</th><th class="num">Payment (out)</th><th class="num">Receipt (in)</th><th class="num">Days held</th><th class="num">Interest (₹)</th><th class="num">Running balance</th><th>Actions</th></tr></thead>';
+  tbl.innerHTML='<thead><tr><th>Date</th><th>Type</th><th class="num">Payment (out)</th><th class="num">Receipt (in)</th><th class="num">Running balance</th><th class="num">Days held</th><th class="num">Interest (₹)</th><th>Actions</th></tr></thead>';
   var tbody=document.createElement('tbody');
   res.ledger.forEach(function(row){
-    if(row.rowType==='segment'&&!showSeg)return;
+    if(row.rowType==='segment')return;
     var tr=document.createElement('tr');
     if(row.rowType==='interest')tr.className='tr-int';
     if(row.rowType==='segment')tr.className='tr-seg';
@@ -417,9 +532,9 @@ function loadPartyRep(){
     tr.innerHTML='<td style="white-space:nowrap">'+dateCell+'</td><td>'+typeCell+'</td>'+
       '<td class="num" style="color:#dc2626">'+(row.debit&&row.debit>0?fa(row.debit):'')+'</td>'+
       '<td class="num" style="color:#16a34a">'+(row.credit&&row.credit>0?fa(row.credit):'')+'</td>'+
-      '<td class="num" style="color:#999">'+(row.days!==''?row.days+' d':'')+'</td>'+
-      '<td class="num" style="color:#2563eb">'+(row.segInt!==''?fa(row.segInt):row.rowType==='interest'?fa(row.monthTotal):'')+'</td>'+
       '<td class="num" style="font-weight:500;color:'+(row.balance>=0?'#dc2626':'#16a34a')+'">'+fa(Math.abs(row.balance))+' '+(row.balance>=0?'Dr':'Cr')+'</td>'+
+      '<td class="num" style="color:#999">'+(row.accrDays?row.accrDays+' d':'')+'</td>'+
+      '<td class="num" style="color:#2563eb">'+(row.accrInt?fa(row.accrInt):'')+'</td>'+
       '<td></td>';
     if(row.rowType==='receipt'||row.rowType==='payment'){
       var actTd=tr.querySelector('td:last-child');
@@ -433,9 +548,10 @@ function loadPartyRep(){
     tbody.appendChild(tr);
   });
   var foot=document.createElement('tr');foot.className='tr-foot';
-  foot.innerHTML='<td colspan="5" style="text-align:right;font-weight:600">Total interest posted</td>'+
-    '<td class="num" style="color:#2563eb;font-weight:600">'+fa(res.totalInterest)+'</td>'+
-    '<td class="num" style="font-weight:600">'+fa(Math.abs(res.closingBalance))+' '+(isdr?'Dr':'Cr')+'</td><td></td>';
+  foot.innerHTML='<td colspan="4" style="text-align:right;font-weight:600">Closing balance / Total interest</td>'+
+    '<td class="num" style="font-weight:600">'+fa(Math.abs(res.closingBalance))+' '+(isdr?'Dr':'Cr')+'</td>'+
+    '<td class="num"></td>'+
+    '<td class="num" style="color:#2563eb;font-weight:600">'+fa(res.totalInterest)+'</td><td></td>';
   tbody.appendChild(foot);tbl.appendChild(tbody);wrap.appendChild(tbl);card.appendChild(wrap);body.appendChild(card);
 }
 
@@ -502,21 +618,25 @@ function editParty(id){
   document.getElementById('p-rate').value=p.rate||24;document.getElementById('p-itype').value=p.itype||'Compound';
   document.getElementById('p-open').value=p.open||'';document.getElementById('p-otype').value=p.otype||'Dr (they owe me)';
   document.getElementById('p-opendate').value=p.opendate||tod();document.getElementById('p-notes').value=p.notes||'';
+  document.getElementById('p-intjv').checked=(p.intjv!==false);document.getElementById('p-jvfreq').value=p.jvfreq||'Monthly';toggleJvFreq();
   document.getElementById('party-form').style.display='block';document.getElementById('party-form').scrollIntoView({behavior:'smooth'});
 }
 function editCC(id){var c=DB.cc.find(function(x){return x.id===id;});if(!c)return;eCCid=id;document.getElementById('cc-name').value=c.name;document.getElementById('cc-desc').value=c.desc||'';document.getElementById('cc-form').style.display='block';}
+function editMode(id){var m=DB.modes.find(function(x){return x.id===id;});if(!m)return;eModeId=id;document.getElementById('mode-name').value=m.name;document.getElementById('mode-form').style.display='block';}
 function setTxnType(t){cType=t;document.getElementById('tb-pay').className='ttbtn pay'+(t==='payment'?' on':'');document.getElementById('tb-rec').className='ttbtn rec'+(t==='receipt'?' on':'');document.getElementById('txn-hint').className='hint '+(t==='payment'?'pay':'rec');document.getElementById('txn-hint').textContent=t==='payment'?'Money going out':'Money coming in';document.getElementById('txn-title').textContent=t==='payment'?'Record payment':'Record receipt';}
-function setMode(m){cMode=m;document.getElementById('mb-bank').className='mbtn'+(m==='Bank'?' on':'');document.getElementById('mb-cash').className='mbtn'+(m==='Cash'?' on':'');document.getElementById('mb-petty').className='mbtn'+(m==='Petty cash'?' on':'');}
 function backLand(){document.getElementById('txn-land').style.display='block';document.getElementById('txn-form').style.display='none';}
-function startTxn(t){document.getElementById('txn-land').style.display='none';document.getElementById('txn-form').style.display='block';setTxnType(t);if(!document.getElementById('t-date').value)document.getElementById('t-date').value=tod();}
-function openEdit(id){var t=DB.txns.find(function(x){return x.id===id;});if(!t)return;eTid=id;fillDD('e-party','sel');fillCCDD('e-cc','none');document.getElementById('e-party').value=t.pid;document.getElementById('e-date').value=t.date;document.getElementById('e-amt').value=t.amt;document.getElementById('e-cc').value=t.ccid||'';document.getElementById('e-narr').value=t.narr||'';document.getElementById('e-type').value=t.tt;document.getElementById('e-mode').value=t.mode;document.getElementById('edit-modal').style.display='block';document.getElementById('edit-modal').scrollIntoView({behavior:'smooth'});}
+function startTxn(t){document.getElementById('txn-land').style.display='none';document.getElementById('txn-form').style.display='block';setTxnType(t);fillModeDD('t-mode','sel');if(!document.getElementById('t-date').value)document.getElementById('t-date').value=tod();}
+function openEdit(id){var t=DB.txns.find(function(x){return x.id===id;});if(!t)return;eTid=id;fillDD('e-party','sel');fillCCDD('e-cc','none');fillModeDD('e-mode','sel');document.getElementById('e-party').value=t.pid;document.getElementById('e-date').value=t.date;document.getElementById('e-amt').value=t.amt;document.getElementById('e-cc').value=t.ccid||'';document.getElementById('e-narr').value=t.narr||'';document.getElementById('e-type').value=t.tt;document.getElementById('e-mode').value=t.mode;document.getElementById('edit-modal').style.display='block';document.getElementById('edit-modal').scrollIntoView({behavior:'smooth'});}
 function closeEdit(){document.getElementById('edit-modal').style.display='none';eTid=null;}
+function toggleJvFreq(){document.getElementById('p-jvfreq-wrap').style.display=document.getElementById('p-intjv').checked?'':'none';}
 
-document.getElementById('b-addparty').addEventListener('click',function(){ePid=null;document.getElementById('pf-title').textContent='Add party';['p-name','p-phone','p-open','p-notes'].forEach(function(id){document.getElementById(id).value='';});document.getElementById('p-rate').value='24';document.getElementById('p-type').value='Individual';document.getElementById('p-itype').value='Compound';document.getElementById('p-otype').value='Dr (they owe me)';document.getElementById('p-opendate').value=tod();document.getElementById('party-form').style.display='block';});
+document.getElementById('b-addparty').addEventListener('click',function(){ePid=null;document.getElementById('pf-title').textContent='Add party';['p-name','p-phone','p-open','p-notes'].forEach(function(id){document.getElementById(id).value='';});document.getElementById('p-rate').value='24';document.getElementById('p-type').value='Individual';document.getElementById('p-itype').value='Compound';document.getElementById('p-otype').value='Dr (they owe me)';document.getElementById('p-opendate').value=tod();document.getElementById('p-intjv').checked=true;document.getElementById('p-jvfreq').value='Monthly';toggleJvFreq();document.getElementById('party-form').style.display='block';});
+document.getElementById('p-intjv').addEventListener('change',toggleJvFreq);
 document.getElementById('b-cancelparty').addEventListener('click',function(){document.getElementById('party-form').style.display='none';ePid=null;});
 document.getElementById('b-saveparty').addEventListener('click',function(){
   var name=document.getElementById('p-name').value.trim();if(!name)return;
-  var p={id:ePid||Date.now().toString(),name:name,type:document.getElementById('p-type').value,phone:document.getElementById('p-phone').value,rate:document.getElementById('p-rate').value||24,itype:document.getElementById('p-itype').value,open:document.getElementById('p-open').value||0,otype:document.getElementById('p-otype').value,opendate:document.getElementById('p-opendate').value||tod(),notes:document.getElementById('p-notes').value};
+  if(nameExists(DB.parties,name,ePid)){alert('A party named "'+name+'" already exists.');return;}
+  var p={id:ePid||Date.now().toString(),name:name,type:document.getElementById('p-type').value,phone:document.getElementById('p-phone').value,rate:document.getElementById('p-rate').value||24,itype:document.getElementById('p-itype').value,open:document.getElementById('p-open').value||0,otype:document.getElementById('p-otype').value,opendate:document.getElementById('p-opendate').value||tod(),notes:document.getElementById('p-notes').value,intjv:document.getElementById('p-intjv').checked,jvfreq:document.getElementById('p-jvfreq').value};
   if(ePid)DB.parties[DB.parties.findIndex(function(x){return x.id===ePid;})]=p;else DB.parties.push(p);
   save();document.getElementById('party-form').style.display='none';ePid=null;renderParties();renderDash();
 });
@@ -524,6 +644,7 @@ document.getElementById('b-addcc').addEventListener('click',function(){eCCid=nul
 document.getElementById('b-cancelcc').addEventListener('click',function(){document.getElementById('cc-form').style.display='none';eCCid=null;});
 document.getElementById('b-savecc').addEventListener('click',function(){
   var name=document.getElementById('cc-name').value.trim();if(!name)return;
+  if(nameExists(DB.cc,name,eCCid)){alert('A cost center named "'+name+'" already exists.');return;}
   var c={id:eCCid||Date.now().toString(),name:name,desc:document.getElementById('cc-desc').value};
   if(eCCid)DB.cc[DB.cc.findIndex(function(x){return x.id===eCCid;})]=c;else DB.cc.push(c);
   save();document.getElementById('cc-form').style.display='none';eCCid=null;renderCC();fillCCDD('t-cc','none');fillCCDD('r-cc','all');
@@ -534,23 +655,33 @@ document.getElementById('b-backtxn').addEventListener('click',backLand);
 document.getElementById('b-canceltxn').addEventListener('click',backLand);
 document.getElementById('tb-pay').addEventListener('click',function(){setTxnType('payment');});
 document.getElementById('tb-rec').addEventListener('click',function(){setTxnType('receipt');});
-document.getElementById('mb-bank').addEventListener('click',function(){setMode('Bank');});
-document.getElementById('mb-cash').addEventListener('click',function(){setMode('Cash');});
-document.getElementById('mb-petty').addEventListener('click',function(){setMode('Petty cash');});
+document.getElementById('b-addmode').addEventListener('click',function(){eModeId=null;document.getElementById('mode-name').value='';document.getElementById('mode-form').style.display='block';});
+document.getElementById('b-cancelmode').addEventListener('click',function(){document.getElementById('mode-form').style.display='none';eModeId=null;});
+document.getElementById('b-savemode').addEventListener('click',function(){
+  var name=document.getElementById('mode-name').value.trim();if(!name)return;
+  if(nameExists(DB.modes,name,eModeId)){alert('A payment mode named "'+name+'" already exists.');return;}
+  if(eModeId){var old=DB.modes.find(function(x){return x.id===eModeId;});var oldName=old?old.name:null;old.name=name;if(oldName&&oldName!==name)DB.txns.forEach(function(t){if(t.mode===oldName)t.mode=name;});}
+  else DB.modes.push({id:Date.now().toString(),name:name});
+  save();document.getElementById('mode-form').style.display='none';eModeId=null;renderModes();fillModeDD('t-mode','sel');fillModeDD('f-mode','all');
+});
+document.getElementById('b-qmode').addEventListener('click',function(){var bar=document.getElementById('qa-mode');bar.classList.toggle('open');if(bar.classList.contains('open'))document.getElementById('qa-mode-input').focus();});
+document.getElementById('qa-mode-ok').addEventListener('click',function(){var n=document.getElementById('qa-mode-input').value.trim();if(!n)return;var ex=DB.modes.find(function(x){return (x.name||'').trim().toLowerCase()===n.toLowerCase();});if(!ex){ex={id:Date.now().toString(),name:n};DB.modes.push(ex);save();}fillModeDD('t-mode','sel');fillModeDD('f-mode','all');document.getElementById('t-mode').value=ex.name;document.getElementById('qa-mode-input').value='';document.getElementById('qa-mode').classList.remove('open');});
+document.getElementById('qa-mode-cancel').addEventListener('click',function(){document.getElementById('qa-mode-input').value='';document.getElementById('qa-mode').classList.remove('open');});
+document.getElementById('qa-mode-input').addEventListener('keydown',function(e){if(e.key==='Enter')document.getElementById('qa-mode-ok').click();if(e.key==='Escape')document.getElementById('qa-mode-cancel').click();});
 document.getElementById('b-qparty').addEventListener('click',function(){var bar=document.getElementById('qa-party');bar.classList.toggle('open');if(bar.classList.contains('open'))document.getElementById('qa-party-input').focus();});
-document.getElementById('qa-party-ok').addEventListener('click',function(){var n=document.getElementById('qa-party-input').value.trim();if(!n)return;var p={id:Date.now().toString(),name:n,type:'Individual',phone:'',rate:24,itype:'Compound',open:0,otype:'Dr (they owe me)',opendate:tod(),notes:''};DB.parties.push(p);save();fillDD('t-party','sel');fillDD('f-party','all');fillDD('r-party','sel');document.getElementById('t-party').value=p.id;document.getElementById('qa-party-input').value='';document.getElementById('qa-party').classList.remove('open');});
+document.getElementById('qa-party-ok').addEventListener('click',function(){var n=document.getElementById('qa-party-input').value.trim();if(!n)return;var p=DB.parties.find(function(x){return (x.name||'').trim().toLowerCase()===n.toLowerCase();});if(p){alert('A party named "'+p.name+'" already exists — selecting it.');}else{p={id:Date.now().toString(),name:n,type:'Individual',phone:'',rate:24,itype:'Compound',open:0,otype:'Dr (they owe me)',opendate:tod(),notes:'',intjv:true,jvfreq:'Monthly'};DB.parties.push(p);save();}fillDD('t-party','sel');fillDD('f-party','all');fillDD('r-party','sel');document.getElementById('t-party').value=p.id;document.getElementById('qa-party-input').value='';document.getElementById('qa-party').classList.remove('open');});
 document.getElementById('qa-party-cancel').addEventListener('click',function(){document.getElementById('qa-party-input').value='';document.getElementById('qa-party').classList.remove('open');});
 document.getElementById('qa-party-input').addEventListener('keydown',function(e){if(e.key==='Enter')document.getElementById('qa-party-ok').click();if(e.key==='Escape')document.getElementById('qa-party-cancel').click();});
 document.getElementById('b-qcc').addEventListener('click',function(){var bar=document.getElementById('qa-cc');bar.classList.toggle('open');if(bar.classList.contains('open'))document.getElementById('qa-cc-input').focus();});
-document.getElementById('qa-cc-ok').addEventListener('click',function(){var n=document.getElementById('qa-cc-input').value.trim();if(!n)return;var c={id:Date.now().toString(),name:n,desc:''};DB.cc.push(c);save();fillCCDD('t-cc','none');fillCCDD('r-cc','all');document.getElementById('t-cc').value=c.id;document.getElementById('qa-cc-input').value='';document.getElementById('qa-cc').classList.remove('open');});
+document.getElementById('qa-cc-ok').addEventListener('click',function(){var n=document.getElementById('qa-cc-input').value.trim();if(!n)return;var c=DB.cc.find(function(x){return (x.name||'').trim().toLowerCase()===n.toLowerCase();});if(c){alert('A cost center named "'+c.name+'" already exists — selecting it.');}else{c={id:Date.now().toString(),name:n,desc:''};DB.cc.push(c);save();}fillCCDD('t-cc','none');fillCCDD('r-cc','all');document.getElementById('t-cc').value=c.id;document.getElementById('qa-cc-input').value='';document.getElementById('qa-cc').classList.remove('open');});
 document.getElementById('qa-cc-cancel').addEventListener('click',function(){document.getElementById('qa-cc-input').value='';document.getElementById('qa-cc').classList.remove('open');});
 document.getElementById('qa-cc-input').addEventListener('keydown',function(e){if(e.key==='Enter')document.getElementById('qa-cc-ok').click();if(e.key==='Escape')document.getElementById('qa-cc-cancel').click();});
 document.getElementById('b-savetxn').addEventListener('click',function(){
   var pid=document.getElementById('t-party').value,date=document.getElementById('t-date').value,amt=document.getElementById('t-amt').value;
   if(!pid||!date||!amt)return;
-  DB.txns.push({id:Date.now().toString(),pid:pid,date:date,amt:parseFloat(amt),tt:cType,mode:cMode,ccid:document.getElementById('t-cc').value,narr:document.getElementById('t-narr').value});
+  DB.txns.push({id:Date.now().toString(),pid:pid,date:date,amt:parseFloat(amt),tt:cType,mode:document.getElementById('t-mode').value,ccid:document.getElementById('t-cc').value,narr:document.getElementById('t-narr').value});
   save();document.getElementById('t-amt').value='';document.getElementById('t-narr').value='';document.getElementById('t-cc').value='';
-  document.getElementById('qa-party').classList.remove('open');document.getElementById('qa-cc').classList.remove('open');
+  document.getElementById('qa-party').classList.remove('open');document.getElementById('qa-cc').classList.remove('open');document.getElementById('qa-mode').classList.remove('open');
   renderTxns();backLand();
 });
 document.getElementById('f-party').addEventListener('change',renderTxns);
@@ -563,12 +694,11 @@ document.getElementById('b-saveedit').addEventListener('click',function(){
   DB.txns[idx]={id:eTid,pid:document.getElementById('e-party').value,date:document.getElementById('e-date').value,amt:parseFloat(document.getElementById('e-amt').value),tt:document.getElementById('e-type').value,mode:document.getElementById('e-mode').value,ccid:document.getElementById('e-cc').value,narr:document.getElementById('e-narr').value};
   save();closeEdit();renderTxns();renderDash();loadPartyRep();loadCCRep();
 });
-document.getElementById('rt-party').addEventListener('click',function(){document.getElementById('rt-party').className='rtab on';document.getElementById('rt-cc').className='rtab';document.getElementById('rep-party').style.display='block';document.getElementById('rep-cc').style.display='none';});
-document.getElementById('rt-cc').addEventListener('click',function(){document.getElementById('rt-cc').className='rtab on';document.getElementById('rt-party').className='rtab';document.getElementById('rep-cc').style.display='block';document.getElementById('rep-party').style.display='none';});
-document.getElementById('r-party').addEventListener('change',loadPartyRep);
+document.getElementById('rt-party').addEventListener('click',function(){document.getElementById('rt-party').className='rtab on';document.getElementById('rt-cc').className='rtab';document.getElementById('rep-party').style.display='block';document.getElementById('rep-cc').style.display='none';loadPartyRep();});
+document.getElementById('rt-cc').addEventListener('click',function(){document.getElementById('rt-cc').className='rtab on';document.getElementById('rt-party').className='rtab';document.getElementById('rep-cc').style.display='block';document.getElementById('rep-party').style.display='none';loadCCRep();});
+document.getElementById('r-party').addEventListener('change',function(){var p=DB.parties.find(function(x){return x.id===document.getElementById('r-party').value;});if(p&&p.opendate)document.getElementById('r-from').value=p.opendate;loadPartyRep();});
 document.getElementById('r-from').addEventListener('change',loadPartyRep);
 document.getElementById('r-to').addEventListener('change',loadPartyRep);
-document.getElementById('show-int-detail').addEventListener('change',loadPartyRep);
 document.getElementById('r-cc').addEventListener('change',loadCCRep);
 document.getElementById('r-cc-from').addEventListener('change',loadCCRep);
 document.getElementById('r-cc-to').addEventListener('change',loadCCRep);
@@ -578,33 +708,32 @@ document.getElementById('b-pcsv').addEventListener('click',function(){
   var from=document.getElementById('r-from').value,to=document.getElementById('r-to').value;
   var party=DB.parties.find(function(p){return p.id===pid;});
   var res=runEngine(party,DB.txns.filter(function(t){return t.pid===pid;}),from,to);
-  var csv='Date/Period,Type,Payment (out),Receipt (in),Days held,Interest,Balance\n';
-  res.ledger.forEach(function(r){csv+='"'+(r.rowType==='segment'?r.label:fd(r.date))+'","'+r.rowType+'",'+(r.debit&&r.debit>0?r.debit.toFixed(2):'')+','+(r.credit&&r.credit>0?r.credit.toFixed(2):'')+',"'+(r.days!==''?r.days:'')+'","'+(r.segInt!==''?r.segInt.toFixed(2):r.rowType==='interest'?r.monthTotal.toFixed(2):'')+'","'+fa(Math.abs(r.balance))+(r.balance>=0?' Dr':' Cr')+'"\n';});
+  var csv='Date,Type,Payment (out),Receipt (in),Balance,Days held,Interest\n';
+  res.ledger.forEach(function(r){if(r.rowType==='segment')return;csv+='"'+fd(r.date)+'","'+r.rowType+'",'+(r.debit&&r.debit>0?r.debit.toFixed(2):'')+','+(r.credit&&r.credit>0?r.credit.toFixed(2):'')+',"'+fa(Math.abs(r.balance))+(r.balance>=0?' Dr':' Cr')+'","'+(r.accrDays?r.accrDays:'')+'","'+(r.accrInt?r.accrInt.toFixed(2):'')+'"\n';});
   dlCSV(csv,party.name+'_ledger_'+to+'.csv');
 });
 document.getElementById('b-ppdf').addEventListener('click',function(){
   var pid=document.getElementById('r-party').value;if(!pid)return;
   var from=document.getElementById('r-from').value,to=document.getElementById('r-to').value;
-  var showSeg=document.getElementById('show-int-detail').checked;
   var party=DB.parties.find(function(p){return p.id===pid;});
   var res=runEngine(party,DB.txns.filter(function(t){return t.pid===pid;}),from,to);
   var isdr=res.closingBalance>=0;
   var rows=res.ledger.map(function(r){
-    if(r.rowType==='segment'&&!showSeg)return'';
+    if(r.rowType==='segment')return'';
     var bg=r.rowType==='interest'?'background:#eff6ff;color:#2563eb':'';
     return'<tr style="'+bg+'"><td style="font-size:10px;white-space:nowrap">'+(r.rowType==='segment'?r.label:fd(r.date))+'</td><td>'+r.rowType+'</td>'+
       '<td style="text-align:right;color:#dc2626">'+(r.debit&&r.debit>0?fa(r.debit):'')+'</td>'+
       '<td style="text-align:right;color:#16a34a">'+(r.credit&&r.credit>0?fa(r.credit):'')+'</td>'+
-      '<td style="text-align:right">'+(r.days!==''?r.days+' d':'')+'</td>'+
-      '<td style="text-align:right">'+(r.segInt!==''?fa(r.segInt):r.rowType==='interest'?fa(r.monthTotal):'')+'</td>'+
-      '<td style="text-align:right;font-weight:600;color:'+(r.balance>=0?'#dc2626':'#16a34a')+'">'+fa(Math.abs(r.balance))+' '+(r.balance>=0?'Dr':'Cr')+'</td></tr>';
+      '<td style="text-align:right;font-weight:600;color:'+(r.balance>=0?'#dc2626':'#16a34a')+'">'+fa(Math.abs(r.balance))+' '+(r.balance>=0?'Dr':'Cr')+'</td>'+
+      '<td style="text-align:right">'+(r.accrDays?r.accrDays+' d':'')+'</td>'+
+      '<td style="text-align:right;color:#2563eb">'+(r.accrInt?fa(r.accrInt):'')+'</td></tr>';
   }).join('');
-  printPDF('<!DOCTYPE html><html><head><meta charset="utf-8"><title>'+party.name+'</title><style>body{font-family:Arial,sans-serif;font-size:11px;margin:28px;color:#222}h1{font-size:15px;margin-bottom:4px}p{color:#888;font-size:10px;margin-bottom:12px}.sum{display:flex;gap:14px;margin-bottom:14px;flex-wrap:wrap}.box{background:#f5f5f5;padding:8px 12px;border-radius:4px;min-width:110px}.lbl{font-size:9px;color:#888;margin-bottom:2px}.val{font-size:13px;font-weight:700}table{width:100%;border-collapse:collapse;font-size:10px}th{background:#f0f0f0;padding:5px 6px;text-align:left;border-bottom:1px solid #ddd}td{padding:4px 6px;border-bottom:1px solid #eee}.tf{font-weight:700;background:#f9f9f9}@media print{#ctrl{display:none!important}}</style></head><body>'+
-    '<h1>'+party.name+' — Ledger</h1><p>'+(party.itype||'Compound')+' · '+(party.rate||24)+'% p.a. · Interest=Balance×(rate÷365)×days · '+fd(from)+' to '+fd(to)+'</p>'+
+  printPDF('<!DOCTYPE html><html><head><meta charset="utf-8"><title>'+party.name+'</title><style>html{-webkit-print-color-adjust:exact;print-color-adjust:exact}body{font-family:Arial,sans-serif;font-size:11px;margin:28px;color:#222}h1{font-size:15px;margin-bottom:4px}p{color:#888;font-size:10px;margin-bottom:12px}.sum{display:flex;gap:14px;margin-bottom:14px;flex-wrap:wrap}.box{background:#f5f5f5;padding:8px 12px;border-radius:4px;min-width:110px}.lbl{font-size:9px;color:#888;margin-bottom:2px}.val{font-size:13px;font-weight:700}table{width:100%;border-collapse:collapse;font-size:10px}th{background:#f0f0f0;padding:5px 6px;text-align:left;border-bottom:1px solid #ddd}td{padding:4px 6px;border-bottom:1px solid #eee}.tf{font-weight:700;background:#f9f9f9}@media print{#ctrl{display:none!important}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}}</style></head><body>'+
+    '<h1>'+party.name+'</h1><p>'+fd(from)+' to '+fd(to)+'</p>'+
     '<div class="sum"><div class="box"><div class="lbl">Closing balance</div><div class="val" style="color:'+(isdr?'#dc2626':'#16a34a')+'">'+fa(Math.abs(res.closingBalance))+' '+(isdr?'Dr':'Cr')+'</div></div>'+
     '<div class="box"><div class="lbl">Interest posted</div><div class="val" style="color:#2563eb">'+fa(res.totalInterest)+'</div></div></div>'+
-    '<table><thead><tr><th>Date/Period</th><th>Type</th><th style="text-align:right">Payment</th><th style="text-align:right">Receipt</th><th style="text-align:right">Days</th><th style="text-align:right">Interest</th><th style="text-align:right">Balance</th></tr></thead><tbody>'+rows+
-    '<tr class="tf"><td colspan="5" style="text-align:right">Total interest</td><td style="text-align:right;color:#2563eb">'+fa(res.totalInterest)+'</td><td style="text-align:right">'+fa(Math.abs(res.closingBalance))+' '+(isdr?'Dr':'Cr')+'</td></tr></tbody></table></body></html>');
+    '<table><thead><tr><th>Date</th><th>Type</th><th style="text-align:right">Payment</th><th style="text-align:right">Receipt</th><th style="text-align:right">Balance</th><th style="text-align:right">Days</th><th style="text-align:right">Interest</th></tr></thead><tbody>'+rows+
+    '<tr class="tf"><td colspan="4" style="text-align:right">Closing balance / Total interest</td><td style="text-align:right">'+fa(Math.abs(res.closingBalance))+' '+(isdr?'Dr':'Cr')+'</td><td></td><td style="text-align:right;color:#2563eb">'+fa(res.totalInterest)+'</td></tr></tbody></table></body></html>');
 });
 document.getElementById('b-ccsv').addEventListener('click',function(){
   var ccid=document.getElementById('r-cc').value,from=document.getElementById('r-cc-from').value,to=document.getElementById('r-cc-to').value;
@@ -622,10 +751,44 @@ document.getElementById('b-cpdf').addEventListener('click',function(){
   var inp=txns.filter(function(t){return t.tt==='receipt';}).reduce(function(s,t){return s+parseFloat(t.amt);},0);
   var ccn=ccid?(DB.cc.find(function(c){return c.id===ccid;})||{name:'Unknown'}).name:'All cost centers';
   var rows=txns.map(function(t){var p=DB.parties.find(function(x){return x.id===t.pid;});return'<tr><td>'+fd(t.date)+'</td><td>'+(p?p.name:'—')+'</td><td>'+(t.narr||'—')+'</td><td style="text-align:right;color:#dc2626">'+(t.tt==='payment'?fa(t.amt):'')+'</td><td style="text-align:right;color:#16a34a">'+(t.tt==='receipt'?fa(t.amt):'')+'</td><td>'+t.mode+'</td></tr>';}).join('');
-  printPDF('<!DOCTYPE html><html><head><meta charset="utf-8"><title>'+ccn+'</title><style>body{font-family:Arial,sans-serif;font-size:11px;margin:28px}h1{font-size:15px;margin-bottom:4px}p{color:#888;font-size:10px;margin-bottom:12px}table{width:100%;border-collapse:collapse;font-size:10px}th{background:#f0f0f0;padding:5px 6px;text-align:left;border-bottom:1px solid #ddd}td{padding:4px 6px;border-bottom:1px solid #eee}.tf{font-weight:700;background:#f9f9f9}@media print{#ctrl{display:none!important}}</style></head><body><h1>'+ccn+'</h1><p>'+fd(from)+' to '+fd(to)+' · '+txns.length+' transactions</p><table><thead><tr><th>Date</th><th>Party</th><th>Narration</th><th style="text-align:right">Payment</th><th style="text-align:right">Receipt</th><th>Mode</th></tr></thead><tbody>'+rows+'<tr class="tf"><td colspan="3">Total</td><td style="text-align:right;color:#dc2626">'+fa(out)+'</td><td style="text-align:right;color:#16a34a">'+fa(inp)+'</td><td></td></tr></tbody></table></body></html>');
+  printPDF('<!DOCTYPE html><html><head><meta charset="utf-8"><title>'+ccn+'</title><style>html{-webkit-print-color-adjust:exact;print-color-adjust:exact}body{font-family:Arial,sans-serif;font-size:11px;margin:28px}h1{font-size:15px;margin-bottom:4px}p{color:#888;font-size:10px;margin-bottom:12px}table{width:100%;border-collapse:collapse;font-size:10px}th{background:#f0f0f0;padding:5px 6px;text-align:left;border-bottom:1px solid #ddd}td{padding:4px 6px;border-bottom:1px solid #eee}.tf{font-weight:700;background:#f9f9f9}@media print{#ctrl{display:none!important}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}}</style></head><body><h1>'+ccn+'</h1><p>'+fd(from)+' to '+fd(to)+' · '+txns.length+' transactions</p><table><thead><tr><th>Date</th><th>Party</th><th>Narration</th><th style="text-align:right">Payment</th><th style="text-align:right">Receipt</th><th>Mode</th></tr></thead><tbody>'+rows+'<tr class="tf"><td colspan="3">Total</td><td style="text-align:right;color:#dc2626">'+fa(out)+'</td><td style="text-align:right;color:#16a34a">'+fa(inp)+'</td><td></td></tr></tbody></table></body></html>');
 });
 
-renderDash();
+// ---- Firebase Auth + cloud data sync ----
+var authMode='login',ledgerSub=null;
+function showAuthErr(m){var e=document.getElementById('auth-err');e.textContent=m||'';e.style.display=m?'block':'none';}
+function setAuthMode(m){authMode=m;var su=m==='signup';document.getElementById('auth-title').textContent=su?'Create account':'Ledger login';document.getElementById('auth-sub').textContent=su?'Create a login (your email must be authorised to see the ledger).':'Sign in to your ledger.';document.getElementById('auth-confirm-wrap').style.display=su?'':'none';document.getElementById('auth-btn').textContent=su?'Create account':'Sign in';document.getElementById('auth-toggle').textContent=su?'Have an account? Sign in':'New here? Create account';showAuthErr('');}
+function submitAuth(){var email=document.getElementById('auth-user').value.trim(),pass=document.getElementById('auth-pass').value;if(!email||!pass){showAuthErr('Enter email and password.');return;}if(authMode==='signup'){if(pass.length<6){showAuthErr('Password must be at least 6 characters.');return;}if(pass!==document.getElementById('auth-pass2').value){showAuthErr('Passwords do not match.');return;}fbAuth.createUserWithEmailAndPassword(email,pass).catch(function(e){showAuthErr(e.message);});}else{fbAuth.signInWithEmailAndPassword(email,pass).catch(function(e){showAuthErr(e.message);});}}
+function startApp(user){
+  document.getElementById('nt-lock').textContent='🔒 '+(user.email||'Sign out');
+  document.getElementById('auth-gate').style.display='none';
+  document.getElementById('app').style.display='';
+  if(ledgerSub)return;
+  ledgerSub=LEDGER.onSnapshot(function(doc){
+    if(doc.exists){var d=doc.data();DB={parties:d.parties||[],cc:d.cc||[],modes:d.modes||[],txns:d.txns||[]};}
+    else{DB={parties:[],cc:[],modes:DEFAULT_MODES.slice(),txns:[]};LEDGER.set(DB).catch(function(){});}
+    if(!DB.modes||!DB.modes.length)DB.modes=DEFAULT_MODES.slice();
+    refreshUI();
+  },function(err){console.error(err);alert('Cloud sync error: '+err.message+'\n(Check that your email is authorised in the Firestore rules.)');});
+}
+function refreshUI(){
+  renderDash();
+  var act=document.querySelector('.section.active'),id=act?act.id:'';
+  if(id==='sec-masters'){renderParties();renderCC();renderModes();}
+  else if(id==='sec-txn'){fillDD('f-party','all');fillDD('t-party','sel');fillCCDD('t-cc','none');fillModeDD('f-mode','all');fillModeDD('t-mode','sel');renderTxns();}
+  else if(id==='sec-rep'){fillDD('r-party','sel');fillCCDD('r-cc','all');loadPartyRep();loadCCRep();}
+}
+fbAuth.onAuthStateChanged(function(user){
+  if(user){startApp(user);}
+  else{if(ledgerSub){ledgerSub();ledgerSub=null;}document.getElementById('app').style.display='none';setAuthMode('login');document.getElementById('auth-user').value='';document.getElementById('auth-pass').value='';document.getElementById('auth-pass2').value='';document.getElementById('auth-gate').style.display='flex';}
+});
+document.getElementById('auth-btn').addEventListener('click',submitAuth);
+document.getElementById('auth-pass').addEventListener('keydown',function(e){if(e.key==='Enter')submitAuth();});
+document.getElementById('auth-pass2').addEventListener('keydown',function(e){if(e.key==='Enter')submitAuth();});
+document.getElementById('auth-user').addEventListener('keydown',function(e){if(e.key==='Enter')document.getElementById('auth-pass').focus();});
+document.getElementById('auth-toggle').addEventListener('click',function(){setAuthMode(authMode==='login'?'signup':'login');});
+document.getElementById('auth-forgot').addEventListener('click',function(){var email=document.getElementById('auth-user').value.trim();if(!email){showAuthErr('Enter your email above first, then click Forgot password.');return;}fbAuth.sendPasswordResetEmail(email).then(function(){showAuthErr('Password reset email sent to '+email+'.');}).catch(function(e){showAuthErr(e.message);});});
+document.getElementById('nt-lock').addEventListener('click',function(){fbAuth.signOut();});
 </script>
 </body>
 </html>
