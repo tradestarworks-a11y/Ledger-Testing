@@ -303,12 +303,41 @@ var LEDGER=fbDB.collection('ledger').doc('main');
   </div>
 </div>
 
+<div id="share-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:9500;align-items:center;justify-content:center;padding:1rem">
+  <div class="card" style="max-width:420px;width:100%">
+    <div class="row-hd" style="margin-bottom:1rem"><h2 style="font-size:14px" id="share-title">Share ledger</h2><button class="btn btn-sm" id="share-close">✕</button></div>
+    <p style="font-size:12px;color:#888;margin-bottom:8px">View-only link — anyone with it can see this party's ledger (pick dates, export PDF). They cannot edit anything or see other parties.</p>
+    <input id="share-url" readonly style="width:100%;padding:8px 10px;border:1px solid #e0e0e0;border-radius:8px;font-size:12px;margin-bottom:10px">
+    <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn btn-danger" id="share-revoke">Revoke link</button><button class="btn btn-primary" id="share-copy">Copy link</button></div>
+  </div>
+</div>
+
+<div id="viewer" style="display:none">
+  <div class="app">
+    <div class="row-hd"><h1 id="v-title" style="font-size:17px;font-weight:600">Ledger</h1></div>
+    <div class="card">
+      <div class="frow">
+        <div class="fg"><label style="font-size:11px">From</label><input id="v-from" type="date"></div>
+        <div class="fg"><label style="font-size:11px">To</label><input id="v-to" type="date"></div>
+        <div style="align-self:flex-end"><button class="btn btn-sm" id="v-pdf" title="Export to PDF">📄 PDF</button></div>
+      </div>
+    </div>
+    <div id="v-body"></div>
+    <p style="text-align:center;font-size:11px;color:#aaa;margin-top:1rem">View-only shared ledger</p>
+  </div>
+</div>
+
 <script>
-var DB={parties:[],cc:[],modes:[],txns:[]};
+var DB={parties:[],cc:[],modes:[],txns:[],shares:[]};
 var DEFAULT_MODES=[{id:'m1',name:'Bank'},{id:'m2',name:'Cash'},{id:'m3',name:'Petty cash'}];
 var ePid=null,eCCid=null,eModeId=null,eTid=null,cType='payment';
+var SHARE=new URLSearchParams(location.search).get('share');
 
-function save(){LEDGER.set({parties:DB.parties,cc:DB.cc,modes:DB.modes,txns:DB.txns}).catch(function(e){console.error('Save failed',e);alert('Could not save to cloud: '+e.message);});}
+function save(){LEDGER.set({parties:DB.parties,cc:DB.cc,modes:DB.modes,txns:DB.txns,shares:DB.shares||[]}).then(syncShares).catch(function(e){console.error('Save failed',e);alert('Could not save to cloud: '+e.message);});}
+// Keep each shared (view-only) party doc in sync with the latest data
+function writeShare(token,p){var txns=DB.txns.filter(function(t){return t.pid===p.id;});return fbDB.collection('shares').doc(token).set({pid:p.id,party:p,txns:txns});}
+function syncShares(){(DB.shares||[]).forEach(function(s){var p=DB.parties.find(function(x){return x.id===s.pid;});if(p)writeShare(s.token,p);else fbDB.collection('shares').doc(s.token).delete().catch(function(){});});}
+function randToken(){var a=new Uint8Array(16);if(window.crypto&&crypto.getRandomValues)crypto.getRandomValues(a);else for(var i=0;i<16;i++)a[i]=Math.floor(Math.random()*256);return Array.prototype.map.call(a,function(x){return('0'+x.toString(16)).slice(-2);}).join('');}
 function nameExists(list,name,exceptId){var n=(name||'').trim().toLowerCase();return list.some(function(x){return (x.name||'').trim().toLowerCase()===n&&x.id!==exceptId;});}
 function tod(){return new Date().toISOString().split('T')[0];}
 function fom(){var d=new Date();return new Date(d.getFullYear(),d.getMonth(),1).toISOString().split('T')[0];}
@@ -465,10 +494,11 @@ function renderParties(){
       '<div style="font-size:11px;color:#888;margin-top:2px">'+(p.rate||24)+'% p.a. · '+(p.itype||'Compound')+' · '+(p.intjv===false?'No interest JV':'JV '+(p.jvfreq||'Monthly'))+(p.phone?' · '+p.phone:'')+'</div></div>'+
       '<div style="display:flex;align-items:center;gap:8px">'+
       '<div style="text-align:right"><div style="font-weight:500;color:'+c+'">'+fa(Math.abs(r.bal))+' '+(d?'Dr':'Cr')+'</div><div style="font-size:11px;color:#888">Int: '+fa(r.interest)+'</div></div>'+
-      '<button class="btn btn-sm" title="Edit">✏️</button><button class="btn btn-sm btn-danger" title="Delete">🗑️</button></div>';
+      '<button class="btn btn-sm" title="Share view-only link">🔗</button><button class="btn btn-sm" title="Edit">✏️</button><button class="btn btn-sm btn-danger" title="Delete">🗑️</button></div>';
     var btns=row.querySelectorAll('button');
-    btns[0].addEventListener('click',function(){editParty(p.id);});
-    btns[1].addEventListener('click',function(){showConfirm(row,'Delete '+p.name+'?',function(){DB.parties=DB.parties.filter(function(x){return x.id!==p.id;});DB.txns=DB.txns.filter(function(t){return t.pid!==p.id;});save();renderParties();renderDash();});});
+    btns[0].addEventListener('click',function(){openShareModal(p);});
+    btns[1].addEventListener('click',function(){editParty(p.id);});
+    btns[2].addEventListener('click',function(){showConfirm(row,'Delete '+p.name+'?',function(){var sh=(DB.shares||[]).find(function(x){return x.pid===p.id;});if(sh)fbDB.collection('shares').doc(sh.token).delete().catch(function(){});DB.shares=(DB.shares||[]).filter(function(x){return x.pid!==p.id;});DB.parties=DB.parties.filter(function(x){return x.id!==p.id;});DB.txns=DB.txns.filter(function(t){return t.pid!==p.id;});save();renderParties();renderDash();});});
     container.appendChild(row);
   });
 }
@@ -770,11 +800,7 @@ document.getElementById('b-pcsv').addEventListener('click',function(){
   res.ledger.forEach(function(r){if(r.rowType==='segment')return;csv+='"'+fd(r.date)+'","'+r.rowType+'","'+(r.mode||'')+'",'+(r.debit&&r.debit>0?r.debit.toFixed(2):'')+','+(r.credit&&r.credit>0?r.credit.toFixed(2):'')+',"'+fa(Math.abs(r.balance))+(r.balance>=0?' Dr':' Cr')+'","'+(r.accrDays?r.accrDays:'')+'","'+(r.accrInt?r.accrInt.toFixed(2):'')+'"\n';});
   dlCSV(csv,party.name+'_ledger_'+to+'.csv');
 });
-document.getElementById('b-ppdf').addEventListener('click',function(){
-  var pid=document.getElementById('r-party').value;if(!pid)return;
-  var from=document.getElementById('r-from').value,to=document.getElementById('r-to').value;
-  var party=DB.parties.find(function(p){return p.id===pid;});
-  var res=runEngine(party,DB.txns.filter(function(t){return t.pid===pid;}),from,to);
+function partyLedgerPDF(party,res,from,to){
   var isdr=res.closingBalance>=0;
   var rows=res.ledger.map(function(r){
     if(r.rowType==='segment')return'';
@@ -793,6 +819,12 @@ document.getElementById('b-ppdf').addEventListener('click',function(){
     '<div class="box"><div class="lbl">Interest posted</div><div class="val" style="color:#2563eb">'+fa(res.totalInterest)+'</div></div></div>'+
     '<table><thead><tr><th>Date</th><th>Type</th><th>Mode</th><th style="text-align:right">Payment</th><th style="text-align:right">Receipt</th><th style="text-align:right">Balance</th><th style="text-align:right">Days</th><th style="text-align:right">Interest</th></tr></thead><tbody>'+rows+
     '<tr class="tf"><td colspan="5" style="text-align:right">Closing balance / Total interest</td><td style="text-align:right">'+fa(Math.abs(res.closingBalance))+' '+(isdr?'Dr':'Cr')+'</td><td></td><td style="text-align:right;color:#2563eb">'+fa(res.totalInterest)+'</td></tr></tbody></table></body></html>');
+}
+document.getElementById('b-ppdf').addEventListener('click',function(){
+  var pid=document.getElementById('r-party').value;if(!pid)return;
+  var from=document.getElementById('r-from').value,to=document.getElementById('r-to').value;
+  var party=DB.parties.find(function(p){return p.id===pid;});
+  partyLedgerPDF(party,runEngine(party,DB.txns.filter(function(t){return t.pid===pid;}),from,to),from,to);
 });
 document.getElementById('b-ccsv').addEventListener('click',function(){
   var ccid=document.getElementById('r-cc').value,from=document.getElementById('r-cc-from').value,to=document.getElementById('r-cc-to').value;
@@ -825,8 +857,8 @@ function startApp(user){
   checkImport();
   if(ledgerSub)return;
   ledgerSub=LEDGER.onSnapshot(function(doc){
-    if(doc.exists){var d=doc.data();DB={parties:d.parties||[],cc:d.cc||[],modes:d.modes||[],txns:d.txns||[]};}
-    else{DB={parties:[],cc:[],modes:DEFAULT_MODES.slice(),txns:[]};LEDGER.set(DB).catch(function(){});}
+    if(doc.exists){var d=doc.data();DB={parties:d.parties||[],cc:d.cc||[],modes:d.modes||[],txns:d.txns||[],shares:d.shares||[]};}
+    else{DB={parties:[],cc:[],modes:DEFAULT_MODES.slice(),txns:[],shares:[]};LEDGER.set(DB).catch(function(){});}
     if(!DB.modes||!DB.modes.length)DB.modes=DEFAULT_MODES.slice();
     refreshUI();
   },function(err){console.error(err);alert('Cloud sync error: '+err.message+'\n(Check that your email is authorised in the Firestore rules.)');});
@@ -838,10 +870,64 @@ function refreshUI(){
   else if(id==='sec-txn'){fillDD('f-party','all');fillDD('t-party','sel');fillCCDD('t-cc','none');fillModeDD('f-mode','all');fillModeDD('t-mode','sel');renderTxns();}
   else if(id==='sec-rep'){fillDD('r-party','sel');fillCCDD('r-cc','all');loadPartyRep();loadCCRep();}
 }
-fbAuth.onAuthStateChanged(function(user){
+if(SHARE){ initViewer(SHARE); }
+else fbAuth.onAuthStateChanged(function(user){
   if(user){startApp(user);}
   else{if(ledgerSub){ledgerSub();ledgerSub=null;}document.getElementById('app').style.display='none';setAuthMode('login');document.getElementById('auth-user').value='';document.getElementById('auth-pass').value='';document.getElementById('auth-pass2').value='';document.getElementById('auth-gate').style.display='flex';}
 });
+// ---- View-only shared ledger ----
+var VSHARE=null;
+function initViewer(token){
+  document.getElementById('auth-gate').style.display='none';
+  document.getElementById('app').style.display='none';
+  var v=document.getElementById('viewer');v.style.display='block';
+  document.getElementById('v-body').innerHTML='<div class="card"><div class="empty">Loading…</div></div>';
+  fbDB.collection('shares').doc(token).get().then(function(d){
+    if(!d.exists){document.getElementById('v-body').innerHTML='<div class="card"><div class="empty">This link is invalid or has been revoked.</div></div>';return;}
+    VSHARE=d.data();
+    document.getElementById('v-title').textContent=(VSHARE.party&&VSHARE.party.name||'Party')+' — Ledger';
+    var fe=document.getElementById('v-from'),te=document.getElementById('v-to');
+    fe.value=(VSHARE.party&&VSHARE.party.opendate)||fom();te.value=tod();
+    renderViewer();
+  }).catch(function(e){document.getElementById('v-body').innerHTML='<div class="card"><div class="empty">Could not load: '+e.message+'</div></div>';});
+}
+function viewerRes(){return runEngine(VSHARE.party,VSHARE.txns||[],document.getElementById('v-from').value,document.getElementById('v-to').value);}
+function renderViewer(){
+  if(!VSHARE)return;var res=viewerRes();var isdr=res.closingBalance>=0;var body=document.getElementById('v-body');
+  var h='<div class="mg"><div class="mc"><div class="ml">Closing balance</div><div class="mv" style="color:'+(isdr?'#dc2626':'#16a34a')+'">'+fa(Math.abs(res.closingBalance))+' '+(isdr?'Dr':'Cr')+'</div></div><div class="mc"><div class="ml">Total interest posted</div><div class="mv" style="color:#2563eb">'+fa(res.totalInterest)+'</div></div></div>';
+  h+='<div class="card"><div style="overflow-x:auto"><table style="table-layout:auto"><thead><tr><th>Date</th><th>Type</th><th>Mode</th><th class="num">Payment (out)</th><th class="num">Receipt (in)</th><th class="num">Running balance</th><th class="num">Days held</th><th class="num">Interest (₹)</th></tr></thead><tbody>';
+  res.ledger.forEach(function(r){if(r.rowType==='segment')return;
+    var tcls=r.rowType==='interest'?' class="tr-int"':'';
+    var typeCell=r.rowType==='receipt'?'<span class="tag tag-r">Receipt</span>':r.rowType==='payment'?'<span class="tag tag-p">Payment</span>':r.rowType==='interest'?'<span class="tag tag-i">Interest posted</span>':r.rowType==='opening'?'<span class="tag">Opening</span>':'';
+    h+='<tr'+tcls+'><td style="white-space:nowrap">'+fd(r.date)+'</td><td>'+typeCell+'</td>'+
+      '<td>'+((r.rowType==='payment'||r.rowType==='receipt')&&r.mode?'<span class="tag">'+r.mode+'</span>':'')+'</td>'+
+      '<td class="num" style="color:#dc2626">'+(r.debit&&r.debit>0?fa(r.debit):'')+'</td>'+
+      '<td class="num" style="color:#16a34a">'+(r.credit&&r.credit>0?fa(r.credit):'')+'</td>'+
+      '<td class="num" style="font-weight:500;color:'+(r.balance>=0?'#dc2626':'#16a34a')+'">'+fa(Math.abs(r.balance))+' '+(r.balance>=0?'Dr':'Cr')+'</td>'+
+      '<td class="num" style="color:#999">'+(r.accrDays?r.accrDays+' d':'')+'</td>'+
+      '<td class="num" style="color:#2563eb">'+(r.accrInt?fa(r.accrInt):'')+'</td></tr>';
+  });
+  h+='<tr class="tr-foot"><td></td><td></td><td class="num" style="font-weight:600">Totals</td><td></td><td class="num" style="font-weight:600">'+fa(Math.abs(res.closingBalance))+' '+(isdr?'Dr':'Cr')+'</td><td></td><td class="num c-int" style="color:#2563eb;font-weight:600">'+fa(res.totalInterest)+'</td></tr>';
+  h+='</tbody></table></div></div>';
+  body.innerHTML=h;
+}
+document.getElementById('v-from').addEventListener('change',renderViewer);
+document.getElementById('v-to').addEventListener('change',renderViewer);
+document.getElementById('v-pdf').addEventListener('click',function(){if(VSHARE)partyLedgerPDF(VSHARE.party,viewerRes(),document.getElementById('v-from').value,document.getElementById('v-to').value);});
+// ---- Share view-only link (owner) ----
+var shareModalPid=null;
+function openShareModal(p){
+  var s=(DB.shares||[]).find(function(x){return x.pid===p.id;});
+  var token=s?s.token:randToken();
+  if(!s){DB.shares=DB.shares||[];DB.shares.push({token:token,pid:p.id});save();}else{writeShare(token,p);}
+  shareModalPid=p.id;
+  document.getElementById('share-title').textContent="Share "+p.name+"'s ledger";
+  document.getElementById('share-url').value=location.origin+location.pathname+'?share='+token;
+  document.getElementById('share-modal').style.display='flex';
+}
+document.getElementById('share-close').addEventListener('click',function(){document.getElementById('share-modal').style.display='none';});
+document.getElementById('share-copy').addEventListener('click',function(){var i=document.getElementById('share-url');i.select();try{navigator.clipboard.writeText(i.value);}catch(e){try{document.execCommand('copy');}catch(_){}}var b=document.getElementById('share-copy');b.textContent='Copied!';setTimeout(function(){b.textContent='Copy link';},1500);});
+document.getElementById('share-revoke').addEventListener('click',function(){if(!shareModalPid)return;var s=(DB.shares||[]).find(function(x){return x.pid===shareModalPid;});if(s){fbDB.collection('shares').doc(s.token).delete().catch(function(){});DB.shares=DB.shares.filter(function(x){return x.pid!==shareModalPid;});save();}document.getElementById('share-modal').style.display='none';alert('Link revoked — it will no longer open.');});
 document.getElementById('auth-btn').addEventListener('click',submitAuth);
 document.getElementById('auth-pass').addEventListener('keydown',function(e){if(e.key==='Enter')submitAuth();});
 document.getElementById('auth-pass2').addEventListener('keydown',function(e){if(e.key==='Enter')submitAuth();});
