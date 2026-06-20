@@ -82,7 +82,26 @@ td{padding:7px 8px;border-bottom:1px solid #f5f5f5;vertical-align:middle}
 .quick-add-bar .ok-btn{background:#1a1a1a;color:#fff;border-color:#1a1a1a}
 .int-toggle{display:flex;align-items:center;gap:8px;font-size:13px;padding:6px 0}
 .int-toggle input[type=checkbox]{width:16px;height:16px;cursor:pointer}
-@media(max-width:600px){.grid2,.grid3,.grid4{grid-template-columns:1fr}.mg{grid-template-columns:1fr}.start-wrap{flex-direction:column;align-items:center}}
+#d-parties,#txn-list{overflow-x:auto;-webkit-overflow-scrolling:touch}
+@media(max-width:600px){
+  body{padding:.5rem}
+  .app{padding:1rem;border-radius:8px}
+  h1{font-size:16px!important;margin-bottom:1rem!important}
+  .grid2,.grid3,.grid4{grid-template-columns:1fr}
+  .mg{grid-template-columns:1fr}
+  .start-wrap{flex-direction:column;align-items:center}
+  .start-wrap .stbtn{max-width:none;width:100%}
+  /* 16px inputs stop iOS auto-zoom on focus */
+  .fg input,.fg select,.fsel,.quick-add-bar input{font-size:16px}
+  .nav{gap:4px}
+  .nav-btn{padding:8px 12px;font-size:13px}
+  .btn-sm{padding:7px 12px;font-size:13px}
+  th,td{padding:9px 7px}
+  #txn-list table{min-width:680px}
+  #d-parties table{min-width:440px}
+  .rtabs,.modes{flex-wrap:wrap}
+  .frow .fg{min-width:100%}
+}
 </style>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
@@ -119,7 +138,8 @@ var LEDGER=fbDB.collection('ledger').doc('main');
   <button class="nav-btn" id="nt-masters">Masters</button>
   <button class="nav-btn" id="nt-txn">Transactions</button>
   <button class="nav-btn" id="nt-rep">Reports</button>
-  <button class="nav-btn" id="nt-lock" style="margin-left:auto">🔒 Lock</button>
+  <button class="nav-btn" id="nt-pw" title="Change password" style="margin-left:auto">🔑 Password</button>
+  <button class="nav-btn" id="nt-lock">🔒 Lock</button>
 </div>
 
 <div id="import-banner" style="display:none;background:#fef9c3;border:1px solid #fde047;border-radius:8px;padding:10px 14px;margin-bottom:1rem;font-size:13px;align-items:center;justify-content:space-between;gap:10px">
@@ -261,6 +281,16 @@ var LEDGER=fbDB.collection('ledger').doc('main');
     <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn" id="b-canceledit">Cancel</button><button class="btn btn-primary" id="b-saveedit">Save changes</button></div>
   </div>
 </div>
+</div>
+
+<div id="pw-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:9500;align-items:center;justify-content:center;padding:1rem">
+  <div class="card" style="max-width:340px;width:100%">
+    <div class="row-hd" style="margin-bottom:1rem"><h2 style="font-size:14px">Change password</h2><button class="btn btn-sm" id="pw-close">✕</button></div>
+    <div class="fg"><label>New password</label><input id="pw-new" type="password" autocomplete="new-password"></div>
+    <div class="fg"><label>Confirm new password</label><input id="pw-new2" type="password" autocomplete="new-password"></div>
+    <div id="pw-err" style="color:#dc2626;font-size:12px;margin-bottom:8px;display:none"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn" id="pw-cancel">Cancel</button><button class="btn btn-primary" id="pw-save">Update password</button></div>
+  </div>
 </div>
 
 <script>
@@ -795,6 +825,22 @@ document.getElementById('auth-user').addEventListener('keydown',function(e){if(e
 document.getElementById('auth-toggle').addEventListener('click',function(){setAuthMode(authMode==='login'?'signup':'login');});
 document.getElementById('auth-forgot').addEventListener('click',function(){var email=document.getElementById('auth-user').value.trim();if(!email){showAuthErr('Enter your email above first, then click Forgot password.');return;}fbAuth.sendPasswordResetEmail(email).then(function(){showAuthErr('Password reset email sent to '+email+'.');}).catch(function(e){showAuthErr(e.message);});});
 document.getElementById('nt-lock').addEventListener('click',function(){fbAuth.signOut();});
+// ---- Change password (logged-in user) ----
+function pwErr(m){var e=document.getElementById('pw-err');e.textContent=m||'';e.style.display=m?'block':'none';}
+function closePw(){document.getElementById('pw-modal').style.display='none';}
+document.getElementById('nt-pw').addEventListener('click',function(){document.getElementById('pw-new').value='';document.getElementById('pw-new2').value='';pwErr('');document.getElementById('pw-modal').style.display='flex';document.getElementById('pw-new').focus();});
+document.getElementById('pw-close').addEventListener('click',closePw);
+document.getElementById('pw-cancel').addEventListener('click',closePw);
+document.getElementById('pw-save').addEventListener('click',function(){
+  var p1=document.getElementById('pw-new').value,p2=document.getElementById('pw-new2').value;
+  if(p1.length<6){pwErr('Password must be at least 6 characters.');return;}
+  if(p1!==p2){pwErr('Passwords do not match.');return;}
+  var u=fbAuth.currentUser;if(!u){pwErr('Not signed in.');return;}
+  u.updatePassword(p1).then(function(){closePw();alert('Password updated. Use it next time you sign in.');}).catch(function(e){
+    if(e.code==='auth/requires-recent-login')pwErr('For security, please sign out and sign in again, then change your password.');
+    else pwErr(e.message);
+  });
+});
 // ---- One-time import of old offline (localStorage) data into the cloud ----
 function checkImport(){var raw=localStorage.getItem('ledger_v12');document.getElementById('import-banner').style.display=raw?'flex':'none';}
 function mergeArr(target,src){var ids={};target.forEach(function(x){ids[x.id]=1;});(src||[]).forEach(function(x){if(x&&!ids[x.id])target.push(x);});}
