@@ -83,7 +83,7 @@ td{padding:7px 8px;border-bottom:1px solid #f5f5f5;vertical-align:middle}
 .int-toggle{display:flex;align-items:center;gap:8px;font-size:13px;padding:6px 0}
 .int-toggle input[type=checkbox]{width:16px;height:16px;cursor:pointer}
 #d-parties,#txn-list{overflow-x:auto;-webkit-overflow-scrolling:touch}
-.hide-date .c-date,.hide-type .c-type,.hide-days .c-days,.hide-int .c-int,.hide-act .c-act{display:none}
+.hide-date .c-date,.hide-type .c-type,.hide-mode .c-mode,.hide-days .c-days,.hide-int .c-int,.hide-act .c-act{display:none}
 @media(max-width:600px){
   body{padding:.5rem}
   .app{padding:1rem;border-radius:8px}
@@ -263,6 +263,7 @@ var LEDGER=fbDB.collection('ledger').doc('main');
         <span style="color:#888">Columns:</span>
         <label class="int-toggle" style="padding:0"><input type="checkbox" id="cb-date" checked> Date</label>
         <label class="int-toggle" style="padding:0"><input type="checkbox" id="cb-type" checked> Type</label>
+        <label class="int-toggle" style="padding:0"><input type="checkbox" id="cb-mode" checked> Mode</label>
         <label class="int-toggle" style="padding:0"><input type="checkbox" id="cb-days" checked> Days held</label>
         <label class="int-toggle" style="padding:0"><input type="checkbox" id="cb-int" checked> Interest</label>
         <label class="int-toggle" style="padding:0"><input type="checkbox" id="cb-act" checked> Actions</label>
@@ -560,11 +561,12 @@ function loadPartyRep(){
   var hideCls=[];
   if(!document.getElementById('cb-date').checked)hideCls.push('hide-date');
   if(!document.getElementById('cb-type').checked)hideCls.push('hide-type');
+  if(!document.getElementById('cb-mode').checked)hideCls.push('hide-mode');
   if(!document.getElementById('cb-days').checked)hideCls.push('hide-days');
   if(!document.getElementById('cb-int').checked)hideCls.push('hide-int');
   if(!document.getElementById('cb-act').checked)hideCls.push('hide-act');
   tbl.className=hideCls.join(' ');
-  tbl.innerHTML='<thead><tr><th class="c-date">Date</th><th class="c-type">Type</th><th class="num">Payment (out)</th><th class="num">Receipt (in)</th><th class="num">Running balance</th><th class="num c-days">Days held</th><th class="num c-int">Interest (₹)</th><th class="c-act">Actions</th></tr></thead>';
+  tbl.innerHTML='<thead><tr><th class="c-date">Date</th><th class="c-type">Type</th><th class="c-mode">Mode</th><th class="num">Payment (out)</th><th class="num">Receipt (in)</th><th class="num">Running balance</th><th class="num c-days">Days held</th><th class="num c-int">Interest (₹)</th><th class="c-act">Actions</th></tr></thead>';
   var tbody=document.createElement('tbody');
   res.ledger.forEach(function(row){
     if(row.rowType==='segment')return;
@@ -581,6 +583,7 @@ function loadPartyRep(){
     var cc=row.ccid?DB.cc.find(function(x){return x.id===row.ccid;}):null;
     var modeCell=row.mode?'<span class="tag">'+row.mode+'</span>':'—';
     tr.innerHTML='<td class="c-date" style="white-space:nowrap">'+dateCell+'</td><td class="c-type">'+typeCell+'</td>'+
+      '<td class="c-mode">'+((row.rowType==='payment'||row.rowType==='receipt')?modeCell:'')+'</td>'+
       '<td class="num" style="color:#dc2626">'+(row.debit&&row.debit>0?fa(row.debit):'')+'</td>'+
       '<td class="num" style="color:#16a34a">'+(row.credit&&row.credit>0?fa(row.credit):'')+'</td>'+
       '<td class="num" style="font-weight:500;color:'+(row.balance>=0?'#dc2626':'#16a34a')+'">'+fa(Math.abs(row.balance))+' '+(row.balance>=0?'Dr':'Cr')+'</td>'+
@@ -599,7 +602,7 @@ function loadPartyRep(){
     tbody.appendChild(tr);
   });
   var foot=document.createElement('tr');foot.className='tr-foot';
-  foot.innerHTML='<td class="c-date"></td><td class="c-type"></td>'+
+  foot.innerHTML='<td class="c-date"></td><td class="c-type"></td><td class="c-mode"></td>'+
     '<td class="num" style="font-weight:600">Totals</td>'+
     '<td class="num"></td>'+
     '<td class="num" style="font-weight:600">'+fa(Math.abs(res.closingBalance))+' '+(isdr?'Dr':'Cr')+'</td>'+
@@ -753,7 +756,7 @@ document.getElementById('rt-cc').addEventListener('click',function(){document.ge
 document.getElementById('r-party').addEventListener('change',function(){var p=DB.parties.find(function(x){return x.id===document.getElementById('r-party').value;});if(p&&p.opendate)document.getElementById('r-from').value=p.opendate;loadPartyRep();});
 document.getElementById('r-from').addEventListener('change',loadPartyRep);
 document.getElementById('r-to').addEventListener('change',loadPartyRep);
-['cb-date','cb-type','cb-days','cb-int','cb-act'].forEach(function(id){document.getElementById(id).addEventListener('change',loadPartyRep);});
+['cb-date','cb-type','cb-mode','cb-days','cb-int','cb-act'].forEach(function(id){document.getElementById(id).addEventListener('change',loadPartyRep);});
 document.getElementById('r-cc').addEventListener('change',loadCCRep);
 document.getElementById('r-cc-from').addEventListener('change',loadCCRep);
 document.getElementById('r-cc-to').addEventListener('change',loadCCRep);
@@ -763,8 +766,8 @@ document.getElementById('b-pcsv').addEventListener('click',function(){
   var from=document.getElementById('r-from').value,to=document.getElementById('r-to').value;
   var party=DB.parties.find(function(p){return p.id===pid;});
   var res=runEngine(party,DB.txns.filter(function(t){return t.pid===pid;}),from,to);
-  var csv='Date,Type,Payment (out),Receipt (in),Balance,Days held,Interest\n';
-  res.ledger.forEach(function(r){if(r.rowType==='segment')return;csv+='"'+fd(r.date)+'","'+r.rowType+'",'+(r.debit&&r.debit>0?r.debit.toFixed(2):'')+','+(r.credit&&r.credit>0?r.credit.toFixed(2):'')+',"'+fa(Math.abs(r.balance))+(r.balance>=0?' Dr':' Cr')+'","'+(r.accrDays?r.accrDays:'')+'","'+(r.accrInt?r.accrInt.toFixed(2):'')+'"\n';});
+  var csv='Date,Type,Mode,Payment (out),Receipt (in),Balance,Days held,Interest\n';
+  res.ledger.forEach(function(r){if(r.rowType==='segment')return;csv+='"'+fd(r.date)+'","'+r.rowType+'","'+(r.mode||'')+'",'+(r.debit&&r.debit>0?r.debit.toFixed(2):'')+','+(r.credit&&r.credit>0?r.credit.toFixed(2):'')+',"'+fa(Math.abs(r.balance))+(r.balance>=0?' Dr':' Cr')+'","'+(r.accrDays?r.accrDays:'')+'","'+(r.accrInt?r.accrInt.toFixed(2):'')+'"\n';});
   dlCSV(csv,party.name+'_ledger_'+to+'.csv');
 });
 document.getElementById('b-ppdf').addEventListener('click',function(){
@@ -777,6 +780,7 @@ document.getElementById('b-ppdf').addEventListener('click',function(){
     if(r.rowType==='segment')return'';
     var bg=r.rowType==='interest'?'background:#eff6ff;color:#2563eb':'';
     return'<tr style="'+bg+'"><td style="font-size:10px;white-space:nowrap">'+(r.rowType==='segment'?r.label:fd(r.date))+'</td><td>'+r.rowType+'</td>'+
+      '<td>'+((r.rowType==='payment'||r.rowType==='receipt')&&r.mode?r.mode:'')+'</td>'+
       '<td style="text-align:right;color:#dc2626">'+(r.debit&&r.debit>0?fa(r.debit):'')+'</td>'+
       '<td style="text-align:right;color:#16a34a">'+(r.credit&&r.credit>0?fa(r.credit):'')+'</td>'+
       '<td style="text-align:right;font-weight:600;color:'+(r.balance>=0?'#dc2626':'#16a34a')+'">'+fa(Math.abs(r.balance))+' '+(r.balance>=0?'Dr':'Cr')+'</td>'+
@@ -787,8 +791,8 @@ document.getElementById('b-ppdf').addEventListener('click',function(){
     '<h1>'+party.name+'</h1><p>'+fd(from)+' to '+fd(to)+'</p>'+
     '<div class="sum"><div class="box"><div class="lbl">Closing balance</div><div class="val" style="color:'+(isdr?'#dc2626':'#16a34a')+'">'+fa(Math.abs(res.closingBalance))+' '+(isdr?'Dr':'Cr')+'</div></div>'+
     '<div class="box"><div class="lbl">Interest posted</div><div class="val" style="color:#2563eb">'+fa(res.totalInterest)+'</div></div></div>'+
-    '<table><thead><tr><th>Date</th><th>Type</th><th style="text-align:right">Payment</th><th style="text-align:right">Receipt</th><th style="text-align:right">Balance</th><th style="text-align:right">Days</th><th style="text-align:right">Interest</th></tr></thead><tbody>'+rows+
-    '<tr class="tf"><td colspan="4" style="text-align:right">Closing balance / Total interest</td><td style="text-align:right">'+fa(Math.abs(res.closingBalance))+' '+(isdr?'Dr':'Cr')+'</td><td></td><td style="text-align:right;color:#2563eb">'+fa(res.totalInterest)+'</td></tr></tbody></table></body></html>');
+    '<table><thead><tr><th>Date</th><th>Type</th><th>Mode</th><th style="text-align:right">Payment</th><th style="text-align:right">Receipt</th><th style="text-align:right">Balance</th><th style="text-align:right">Days</th><th style="text-align:right">Interest</th></tr></thead><tbody>'+rows+
+    '<tr class="tf"><td colspan="5" style="text-align:right">Closing balance / Total interest</td><td style="text-align:right">'+fa(Math.abs(res.closingBalance))+' '+(isdr?'Dr':'Cr')+'</td><td></td><td style="text-align:right;color:#2563eb">'+fa(res.totalInterest)+'</td></tr></tbody></table></body></html>');
 });
 document.getElementById('b-ccsv').addEventListener('click',function(){
   var ccid=document.getElementById('r-cc').value,from=document.getElementById('r-cc-from').value,to=document.getElementById('r-cc-to').value;
