@@ -107,6 +107,7 @@ td{padding:7px 8px;border-bottom:1px solid #f5f5f5;vertical-align:middle}
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
 var firebaseConfig={apiKey:"AIzaSyB2OyjkHEKsTA7lFmHKpRAxj3ZAPmdOC48",authDomain:"myproject987z.firebaseapp.com",projectId:"myproject987z",storageBucket:"myproject987z.firebasestorage.app",messagingSenderId:"523791319152",appId:"1:523791319152:web:32f8b5b835bd762a9a34b5"};
 firebase.initializeApp(firebaseConfig);
@@ -239,6 +240,14 @@ var LEDGER=fbDB.collection('ledger').doc('main');
       </div>
       <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn" id="b-canceltxn">Cancel</button><button class="btn btn-primary" id="b-savetxn">Save</button></div>
     </div>
+  </div>
+  <div class="card">
+    <div class="row-hd"><h2>Bulk import</h2></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <button class="btn btn-sm" id="b-tmpl">⬇ Download Excel template</button>
+      <label class="btn btn-sm" style="cursor:pointer">⬆ Import Excel/CSV<input type="file" id="imp-file" accept=".xlsx,.xls,.csv" style="display:none"></label>
+    </div>
+    <p style="font-size:11px;color:#888;margin-top:8px">Fill the template — columns: <b>Date</b> (dd-mm-yyyy), <b>Party</b> (must match an existing party), <b>Type</b> (Payment/Receipt), <b>Amount</b>, <b>Mode</b>, <b>Cost center</b> (optional), <b>Narration</b> (optional) — then upload it here.</p>
   </div>
   <div class="card">
     <div class="row-hd"><h2>Recent 10 transactions</h2>
@@ -778,6 +787,60 @@ document.getElementById('b-savetxn').addEventListener('click',function(){
   document.getElementById('qa-party').classList.remove('open');document.getElementById('qa-cc').classList.remove('open');document.getElementById('qa-mode').classList.remove('open');
   renderTxns();backLand();
 });
+// ---- Bulk transaction import (Excel/CSV) ----
+function impPad(n){return ('0'+n).slice(-2);}
+function parseImportDate(v){
+  if(v instanceof Date && !isNaN(v.getTime()))return v.getFullYear()+'-'+impPad(v.getMonth()+1)+'-'+impPad(v.getDate());
+  var s=String(v==null?'':v).trim();if(!s)return null;
+  var m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);if(m)return m[1]+'-'+impPad(+m[2])+'-'+impPad(+m[3]);
+  m=s.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})$/);if(m)return m[3]+'-'+impPad(+m[2])+'-'+impPad(+m[1]);
+  return null;
+}
+function rawget(row,k){var kk=Object.keys(row).find(function(x){return x.trim().toLowerCase()===k;});return kk?row[kk]:'';}
+function sget(row,k){var v=rawget(row,k);return v==null?'':String(v).trim();}
+document.getElementById('b-tmpl').addEventListener('click',function(){
+  if(typeof XLSX==='undefined'){alert('Spreadsheet library not loaded — check your internet connection and reload.');return;}
+  var ws=XLSX.utils.aoa_to_sheet([['Date','Party','Type','Amount','Mode','Cost center','Narration'],['01-05-2026','Sagar','Payment','10000','Bank','','Loan given'],['15-05-2026','Sagar','Receipt','2000','Cash','','Part payment']]);
+  var wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Transactions');
+  XLSX.writeFile(wb,'transactions_template.xlsx');
+});
+document.getElementById('imp-file').addEventListener('change',function(e){
+  var file=e.target.files[0];e.target.value='';if(!file)return;
+  if(typeof XLSX==='undefined'){alert('Spreadsheet library not loaded — check your internet connection and reload.');return;}
+  var reader=new FileReader();
+  reader.onload=function(ev){
+    try{
+      var wb=XLSX.read(new Uint8Array(ev.target.result),{type:'array',cellDates:true});
+      var rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:''});
+      processImportRows(rows);
+    }catch(err){alert('Could not read the file: '+err.message);}
+  };
+  reader.readAsArrayBuffer(file);
+});
+function processImportRows(rows){
+  var added=[],errors=[],i=0;
+  rows.forEach(function(row,idx){
+    var rn=idx+2;
+    var pname=sget(row,'party'),amtRaw=sget(row,'amount'),typeRaw=sget(row,'type').toLowerCase();
+    if(!pname&&!amtRaw&&!typeRaw&&!sget(row,'narration'))return; // blank row
+    var party=DB.parties.find(function(p){return (p.name||'').trim().toLowerCase()===pname.toLowerCase();});
+    if(!party){errors.push('Row '+rn+': party "'+pname+'" not found');return;}
+    var date=parseImportDate(rawget(row,'date'));if(!date){errors.push('Row '+rn+': invalid date (use dd-mm-yyyy)');return;}
+    var tt=typeRaw.indexOf('rec')===0?'receipt':(typeRaw.indexOf('pay')===0?'payment':'');
+    if(!tt){errors.push('Row '+rn+': Type must be Payment or Receipt');return;}
+    var amt=parseFloat(amtRaw.replace(/[^0-9.\-]/g,''));if(!(amt>0)){errors.push('Row '+rn+': invalid amount');return;}
+    var modeName=sget(row,'mode')||(DB.modes[0]?DB.modes[0].name:'Bank');
+    var ccName=sget(row,'cost center'),ccid='';
+    if(ccName){var cc=DB.cc.find(function(c){return (c.name||'').trim().toLowerCase()===ccName.toLowerCase();});ccid=cc?cc.id:'';}
+    added.push({id:String(Date.now())+'_'+(i++),pid:party.id,date:date,amt:amt,tt:tt,mode:modeName,ccid:ccid,narr:sget(row,'narration')});
+  });
+  if(!added.length){alert('No valid rows found to import.'+(errors.length?'\n\n'+errors.slice(0,15).join('\n'):''));return;}
+  var msg='Import '+added.length+' transaction(s)?';
+  if(errors.length)msg+='\n\n'+errors.length+' row(s) will be skipped:\n'+errors.slice(0,15).join('\n')+(errors.length>15?'\n…':'');
+  if(!confirm(msg))return;
+  DB.txns=DB.txns.concat(added);save();renderTxns();renderDash();
+  alert('Imported '+added.length+' transaction(s).'+(errors.length?' Skipped '+errors.length+'.':''));
+}
 document.getElementById('f-party').addEventListener('change',renderTxns);
 document.getElementById('f-type').addEventListener('change',renderTxns);
 document.getElementById('f-mode').addEventListener('change',renderTxns);
