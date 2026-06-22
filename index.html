@@ -250,9 +250,7 @@ var LEDGER=fbDB.collection('ledger').doc('main');
     <p style="font-size:11px;color:#888;margin-top:8px">Fill the template — columns: <b>Date</b> (dd-mm-yyyy), <b>Party</b> (must match an existing party), <b>Type</b> (Payment/Receipt), <b>Amount</b>, <b>Mode</b>, <b>Cost center</b> (optional), <b>Narration</b> (optional) — then upload it here.</p>
   </div>
   <div class="card">
-    <div class="row-hd"><h2>Recent 10 transactions</h2>
-      <div style="display:flex;gap:6px;flex-wrap:wrap"><select class="fsel" id="f-party"><option value="">All parties</option></select><select class="fsel" id="f-type"><option value="">All types</option><option value="payment">Payment</option><option value="receipt">Receipt</option></select><select class="fsel" id="f-mode"><option value="">All modes</option></select></div>
-    </div>
+    <div class="row-hd"><h2>Recent 10 transactions</h2></div>
     <div id="txn-list"></div>
   </div>
 </div>
@@ -513,7 +511,7 @@ function showMaster(which){
 document.getElementById('mt-parties').addEventListener('click',function(){showMaster('parties');renderParties();});
 document.getElementById('mt-cc').addEventListener('click',function(){showMaster('cc');renderCC();});
 document.getElementById('mt-modes').addEventListener('click',function(){showMaster('modes');renderModes();});
-document.getElementById('nt-txn').addEventListener('click',function(){showTab('txn');fillDD('f-party','all');fillDD('t-party','sel');fillCCDD('t-cc','none');fillModeDD('f-mode','all');fillModeDD('t-mode','sel');renderTxns();backLand();});
+document.getElementById('nt-txn').addEventListener('click',function(){showTab('txn');fillDD('t-party','sel');fillCCDD('t-cc','none');fillModeDD('t-mode','sel');renderTxns();backLand();});
 document.getElementById('nt-rep').addEventListener('click',function(){showTab('rep');renderAcctChips('r-party',getPartyItems());renderAcctChips('r-cc',getCCItems());if(!document.getElementById('r-from').value)document.getElementById('r-from').value=fom();if(!document.getElementById('r-to').value)document.getElementById('r-to').value=tod();if(!document.getElementById('r-cc-from').value)document.getElementById('r-cc-from').value=fom();if(!document.getElementById('r-cc-to').value)document.getElementById('r-cc-to').value=tod();loadPartyRep();loadCCRep();});
 
 function fillDD(id,mode){var el=document.getElementById(id);if(!el)return;var cur=el.value;el.innerHTML=(mode==='all'?'<option value="">All parties</option>':'<option value="">Select party</option>')+DB.parties.map(function(p){return'<option value="'+p.id+'">'+p.name+'</option>';}).join('');el.value=cur;}
@@ -614,16 +612,11 @@ function renderModes(){
 }
 
 function renderTxns(){
-  var fp=document.getElementById('f-party').value,ft=document.getElementById('f-type').value,fm=document.getElementById('f-mode').value;
-  var txns=DB.txns.slice().sort(function(a,b){return b.date.localeCompare(a.date);});
-  if(fp)txns=txns.filter(function(t){return t.pid===fp;});
-  if(ft)txns=txns.filter(function(t){return t.tt===ft;});
-  if(fm)txns=txns.filter(function(t){return t.mode===fm;});
-  txns=txns.slice(0,10);
+  var txns=DB.txns.slice().sort(function(a,b){return b.date.localeCompare(a.date);}).slice(0,10);
   var container=document.getElementById('txn-list');
   if(!txns.length){container.innerHTML='<div class="empty">No transactions found</div>';return;}
   var tbl=document.createElement('table');
-  tbl.innerHTML='<thead><tr><th>Date</th><th>Party</th><th>Amount</th><th>Type</th><th>Mode</th><th>Cost center</th><th>Narration</th><th></th></tr></thead>';
+  tbl.innerHTML='<thead><tr><th>Date</th><th>Party</th><th>Amount</th><th>Type</th><th>Mode</th><th>Cost center</th><th>Narration</th><th>Actions</th></tr></thead>';
   var tbody=document.createElement('tbody');
   txns.forEach(function(t){
     var p=DB.parties.find(function(x){return x.id===t.pid;});
@@ -634,8 +627,10 @@ function renderTxns(){
       '<td><span class="tag">'+t.mode+'</span></td>'+
       '<td>'+(cc?'<span class="tag">'+cc.name+'</span>':'—')+'</td>'+
       '<td style="color:#888;font-size:11px">'+(t.narr||'—')+'</td>'+
-      '<td><button class="btn btn-sm btn-danger" title="Delete">🗑️</button></td>';
-    tr.querySelector('button').addEventListener('click',function(){showConfirm(tr,'Delete?',function(){DB.txns=DB.txns.filter(function(x){return x.id!==t.id;});save();renderTxns();renderDash();});});
+      '<td style="white-space:nowrap"><button class="btn btn-sm" style="margin-right:4px" title="Edit">✏️</button><button class="btn btn-sm btn-danger" title="Delete">🗑️</button></td>';
+    var btns=tr.querySelectorAll('button');
+    btns[0].addEventListener('click',function(){openEdit(t.id);});
+    btns[1].addEventListener('click',function(){showConfirm(tr,'Delete?',function(){DB.txns=DB.txns.filter(function(x){return x.id!==t.id;});save();renderTxns();renderDash();});});
     tbody.appendChild(tr);
   });
   tbl.appendChild(tbody);container.innerHTML='';container.appendChild(tbl);
@@ -859,7 +854,7 @@ document.getElementById('qa-mode-ok').addEventListener('click',function(){var n=
 document.getElementById('qa-mode-cancel').addEventListener('click',function(){document.getElementById('qa-mode-input').value='';document.getElementById('qa-mode').classList.remove('open');});
 document.getElementById('qa-mode-input').addEventListener('keydown',function(e){if(e.key==='Enter')document.getElementById('qa-mode-ok').click();if(e.key==='Escape')document.getElementById('qa-mode-cancel').click();});
 document.getElementById('b-qparty').addEventListener('click',function(){var bar=document.getElementById('qa-party');bar.classList.toggle('open');if(bar.classList.contains('open'))document.getElementById('qa-party-input').focus();});
-document.getElementById('qa-party-ok').addEventListener('click',function(){var n=document.getElementById('qa-party-input').value.trim();if(!n)return;var p=DB.parties.find(function(x){return (x.name||'').trim().toLowerCase()===n.toLowerCase();});if(p){alert('A party named "'+p.name+'" already exists — selecting it.');}else{p={id:Date.now().toString(),name:n,type:'Individual',phone:'',rate:24,itype:'Compound',open:0,otype:'Dr (they owe me)',opendate:tod(),notes:'',intjv:true,jvfreq:'Monthly'};DB.parties.push(p);save();}fillDD('t-party','sel');fillDD('f-party','all');fillDD('r-party','sel');document.getElementById('t-party').value=p.id;document.getElementById('qa-party-input').value='';document.getElementById('qa-party').classList.remove('open');});
+document.getElementById('qa-party-ok').addEventListener('click',function(){var n=document.getElementById('qa-party-input').value.trim();if(!n)return;var p=DB.parties.find(function(x){return (x.name||'').trim().toLowerCase()===n.toLowerCase();});if(p){alert('A party named "'+p.name+'" already exists — selecting it.');}else{p={id:Date.now().toString(),name:n,type:'Individual',phone:'',rate:24,itype:'Compound',open:0,otype:'Dr (they owe me)',opendate:tod(),notes:'',intjv:true,jvfreq:'Monthly'};DB.parties.push(p);save();}fillDD('t-party','sel');document.getElementById('t-party').value=p.id;document.getElementById('qa-party-input').value='';document.getElementById('qa-party').classList.remove('open');});
 document.getElementById('qa-party-cancel').addEventListener('click',function(){document.getElementById('qa-party-input').value='';document.getElementById('qa-party').classList.remove('open');});
 document.getElementById('qa-party-input').addEventListener('keydown',function(e){if(e.key==='Enter')document.getElementById('qa-party-ok').click();if(e.key==='Escape')document.getElementById('qa-party-cancel').click();});
 document.getElementById('b-qcc').addEventListener('click',function(){var bar=document.getElementById('qa-cc');bar.classList.toggle('open');if(bar.classList.contains('open'))document.getElementById('qa-cc-input').focus();});
@@ -936,9 +931,6 @@ function processImportRows(rows){
   DB.txns=DB.txns.concat(added);save();renderTxns();renderDash();
   alert('Imported '+added.length+' transaction(s).'+(newCCs.length?' Created '+newCCs.length+' cost center(s).':'')+(errors.length?' Skipped '+errors.length+'.':''));
 }
-document.getElementById('f-party').addEventListener('change',renderTxns);
-document.getElementById('f-type').addEventListener('change',renderTxns);
-document.getElementById('f-mode').addEventListener('change',renderTxns);
 document.getElementById('b-closeedit').addEventListener('click',closeEdit);
 document.getElementById('b-canceledit').addEventListener('click',closeEdit);
 document.getElementById('b-saveedit').addEventListener('click',function(){
@@ -1050,7 +1042,7 @@ function refreshUI(){
   renderDash();
   var act=document.querySelector('.section.active'),id=act?act.id:'';
   if(id==='sec-masters'){renderParties();renderCC();renderModes();}
-  else if(id==='sec-txn'){fillDD('f-party','all');fillDD('t-party','sel');fillCCDD('t-cc','none');fillModeDD('f-mode','all');fillModeDD('t-mode','sel');renderTxns();}
+  else if(id==='sec-txn'){fillDD('t-party','sel');fillCCDD('t-cc','none');fillModeDD('t-mode','sel');renderTxns();}
   else if(id==='sec-rep'){renderAcctChips('r-party',getPartyItems());renderAcctChips('r-cc',getCCItems());loadPartyRep();loadCCRep();}
 }
 if(SHARE){ initViewer(SHARE); }
