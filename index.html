@@ -140,6 +140,7 @@ var LEDGER=fbDB.collection('ledger').doc('main');
   <button class="nav-btn" id="nt-masters">Masters</button>
   <button class="nav-btn" id="nt-txn">Transactions</button>
   <button class="nav-btn" id="nt-rep">Reports</button>
+  <button class="nav-btn" id="nt-notes">Notes</button>
   <button class="nav-btn" id="nt-pw" title="Change password" style="margin-left:auto">🔑</button>
   <button class="nav-btn" id="nt-lock" title="Sign out">🔒</button>
 </div>
@@ -316,6 +317,14 @@ var LEDGER=fbDB.collection('ledger').doc('main');
   </div>
 </div>
 
+<div id="sec-notes" class="section">
+  <div class="row-hd"><h2>Notes &amp; checklist</h2></div>
+  <div class="card">
+    <div style="display:flex;gap:8px"><input id="note-input" placeholder="Add a note / task…" style="flex:1;padding:8px 10px;border:1px solid #e0e0e0;border-radius:8px;font-size:14px;font-family:inherit"><button class="btn btn-primary btn-sm" id="b-addnote">Add</button></div>
+  </div>
+  <div class="card"><div id="note-list"></div></div>
+</div>
+
 <div id="edit-modal" style="display:none">
   <div class="card" style="border:2px solid #e0e0e0">
     <div class="row-hd" style="margin-bottom:1rem"><h2 style="font-size:14px">Edit transaction</h2><button class="btn btn-sm" id="b-closeedit">✕</button></div>
@@ -372,12 +381,12 @@ var LEDGER=fbDB.collection('ledger').doc('main');
 </div>
 
 <script>
-var DB={parties:[],cc:[],modes:[],txns:[],shares:[],intpay:{}};
+var DB={parties:[],cc:[],modes:[],txns:[],shares:[],intpay:{},notes:[]};
 var DEFAULT_MODES=[{id:'m1',name:'Bank'},{id:'m2',name:'Cash'},{id:'m3',name:'Petty cash'}];
 var ePid=null,eCCid=null,eModeId=null,eTid=null,cType='payment';
 var SHARE=new URLSearchParams(location.search).get('share');
 
-function save(){LEDGER.set({parties:DB.parties,cc:DB.cc,modes:DB.modes,txns:DB.txns,shares:DB.shares||[],intpay:DB.intpay||{}}).then(syncShares).catch(function(e){console.error('Save failed',e);alert('Could not save to cloud: '+e.message);});}
+function save(){LEDGER.set({parties:DB.parties,cc:DB.cc,modes:DB.modes,txns:DB.txns,shares:DB.shares||[],intpay:DB.intpay||{},notes:DB.notes||[]}).then(syncShares).catch(function(e){console.error('Save failed',e);alert('Could not save to cloud: '+e.message);});}
 // Keep each shared (view-only) party doc in sync with the latest data + access grant
 function writeShare(s,p){var txns=DB.txns.filter(function(t){return t.pid===p.id;});var ip={};var pre=p.id+'|';Object.keys(DB.intpay||{}).forEach(function(k){if(k.indexOf(pre)===0)ip[k]=DB.intpay[k];});return fbDB.collection('shares').doc(s.token).set({pid:p.id,party:p,txns:txns,intpay:ip,grantUntil:s.grantUntil||0});}
 function syncShares(){(DB.shares||[]).forEach(function(s){var p=DB.parties.find(function(x){return x.id===s.pid;});if(p&&s.active!==false)writeShare(s,p);else fbDB.collection('shares').doc(s.token).delete().catch(function(){});});}
@@ -416,7 +425,10 @@ function runEngine(party,allTxns,fromDate,toDate){
   var jvOn=(party.intjv!==false);
   var freq=party.jvfreq||'Monthly';
   var postMonths=freq==='Quarterly'?[3,6,9,12]:freq==='Half Yearly'?[3,9]:freq==='Yearly'?[3]:null;
-  var openBal=parseFloat(party.open||0)*(party.otype==='Dr (they owe me)'?1:-1);
+  // Balance convention: Closing = Opening + Cr(receipts) - Dr(payments).
+  // A "Dr (they owe me)" opening is a debit (negative); "Cr (I owe them)" is positive.
+  // Positive balance => Cr, negative => Dr (see balLbl/balCol helpers).
+  var openBal=parseFloat(party.open||0)*(party.otype==='Dr (they owe me)'?-1:1);
   var openDate=party.opendate||fromDate;
   // Start of history = earliest of (opening date, earliest transaction, From date),
   // so EVERY entry before the From date is computed and rolled into the opening balance
@@ -472,7 +484,7 @@ function runEngine(party,allTxns,fromDate,toDate){
       totalInt=r2(totalInt+posted);
       if(isCompound){
         balance=r2(balance+(balance>=0?posted:-posted));
-        ledger.push({rowType:'interest',date:ev,label:'Interest posted',debit:'',credit:posted,segInt:'',balance:balance,monthTotal:posted});
+        ledger.push({rowType:'interest',date:ev,label:'Interest posted',debit:balance<0?posted:'',credit:balance>=0?posted:'',segInt:'',balance:balance,monthTotal:posted});
       }else{
         // Simple interest: informational line only — does NOT touch the running balance.
         ledger.push({rowType:'simpleint',date:ev,ym:ev.slice(0,7),monthLabel:monthName(ev),label:'Interest for '+monthName(ev),debit:'',credit:'',segInt:'',balance:balance,monthTotal:posted});
@@ -520,7 +532,7 @@ function showTab(id){
   document.querySelectorAll('.section').forEach(function(s){s.classList.remove('active');});
   document.querySelectorAll('.nav-btn').forEach(function(b){b.classList.remove('active');});
   document.getElementById('sec-'+id).classList.add('active');
-  var map={dash:'nt-dash',masters:'nt-masters',txn:'nt-txn',rep:'nt-rep'};
+  var map={dash:'nt-dash',masters:'nt-masters',txn:'nt-txn',rep:'nt-rep',notes:'nt-notes'};
   document.getElementById(map[id]).classList.add('active');
 }
 
@@ -539,6 +551,26 @@ document.getElementById('mt-cc').addEventListener('click',function(){showMaster(
 document.getElementById('mt-modes').addEventListener('click',function(){showMaster('modes');renderModes();});
 document.getElementById('nt-txn').addEventListener('click',function(){showTab('txn');fillDD('t-party','sel');fillCCDD('t-cc','none');fillModeDD('t-mode','sel');renderTxns();backLand();});
 document.getElementById('nt-rep').addEventListener('click',function(){showTab('rep');renderAcctChips('r-party',getPartyItems());renderAcctChips('r-cc',getCCItems());if(!document.getElementById('r-from').value)document.getElementById('r-from').value=fom();if(!document.getElementById('r-to').value)document.getElementById('r-to').value=tod();if(!document.getElementById('r-cc-from').value)document.getElementById('r-cc-from').value=fom();if(!document.getElementById('r-cc-to').value)document.getElementById('r-cc-to').value=tod();loadPartyRep();loadCCRep();});
+document.getElementById('nt-notes').addEventListener('click',function(){showTab('notes');renderNotes();});
+function escapeHtml(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+function renderNotes(){
+  var c=document.getElementById('note-list'),notes=DB.notes||[];
+  if(!notes.length){c.innerHTML='<div class="empty">No notes yet.</div>';return;}
+  c.innerHTML='';
+  notes.forEach(function(n){
+    var row=document.createElement('div');row.className='prow';
+    row.innerHTML='<label style="display:flex;align-items:center;gap:10px;flex:1;cursor:pointer"><input type="checkbox" '+(n.done?'checked':'')+' style="width:16px;height:16px;cursor:pointer"><span style="'+(n.done?'text-decoration:line-through;color:#999':'')+'">'+escapeHtml(n.text)+'</span></label>'+
+      '<div style="display:flex;gap:8px;flex-shrink:0"><button class="btn btn-sm" title="Edit">✏️</button><button class="btn btn-sm btn-danger" title="Delete">🗑️</button></div>';
+    var cb=row.querySelector('input'),btns=row.querySelectorAll('button');
+    cb.addEventListener('change',function(){n.done=cb.checked;save();renderNotes();});
+    btns[0].addEventListener('click',function(){var nv=prompt('Edit note:',n.text);if(nv!=null&&nv.trim()){n.text=nv.trim();save();renderNotes();}});
+    btns[1].addEventListener('click',function(){showConfirm(row,'Delete this note?',function(){DB.notes=DB.notes.filter(function(x){return x.id!==n.id;});save();renderNotes();});});
+    c.appendChild(row);
+  });
+}
+function addNote(){var el=document.getElementById('note-input'),v=el.value.trim();if(!v)return;DB.notes=DB.notes||[];DB.notes.push({id:Date.now().toString(),text:v,done:false});save();el.value='';renderNotes();}
+document.getElementById('b-addnote').addEventListener('click',addNote);
+document.getElementById('note-input').addEventListener('keydown',function(e){if(e.key==='Enter')addNote();});
 
 function fillDD(id,mode){var el=document.getElementById(id);if(!el)return;var cur=el.value;el.innerHTML=(mode==='all'?'<option value="">All parties</option>':'<option value="">Select party</option>')+DB.parties.map(function(p){return'<option value="'+p.id+'">'+p.name+'</option>';}).join('');el.value=cur;}
 function fillCCDD(id,mode){var el=document.getElementById(id);if(!el)return;var cur=el.value;el.innerHTML=(mode==='all'?'<option value="">All cost centers</option>':'<option value="">None</option>')+DB.cc.map(function(c){return'<option value="'+c.id+'">'+c.name+'</option>';}).join('');el.value=cur;}
@@ -578,11 +610,11 @@ function getCCItems(){return DB.cc.map(function(c){return{id:c.id,name:c.name};}
 
 function renderDash(){
   var dr=0,cr=0,it=0;
-  DB.parties.forEach(function(p){var r=getSum(p);if(r.bal>0)dr+=r.bal;else cr+=Math.abs(r.bal);it+=r.interest;});
+  DB.parties.forEach(function(p){var r=getSum(p);if(r.bal<0)dr+=Math.abs(r.bal);else cr+=r.bal;it+=r.interest;});
   document.getElementById('d-metrics').innerHTML='<div class="mc"><div class="ml">Total receivable (Dr)</div><div class="mv" style="color:#dc2626">'+fa(dr)+'</div></div><div class="mc"><div class="ml">Total payable (Cr)</div><div class="mv" style="color:#16a34a">'+fa(cr)+'</div></div><div class="mc"><div class="ml">Interest posted</div><div class="mv">'+fa(it)+'</div></div>';
   if(!DB.parties.length){document.getElementById('d-parties').innerHTML='<div class="empty">No parties yet.</div>';return;}
   document.getElementById('d-parties').innerHTML='<table><thead><tr><th>Party</th><th>Balance</th><th>Interest posted</th><th>Net</th></tr></thead><tbody>'+
-  DB.parties.map(function(p){var r=getSum(p);var d=r.bal>=0;var c=d?'#dc2626':'#16a34a';return'<tr><td style="font-weight:500">'+p.name+'</td><td style="color:'+c+'">'+fa(Math.abs(r.bal))+' '+(d?'Dr':'Cr')+'</td><td style="color:#2563eb">'+fa(r.interest)+'</td><td style="color:'+c+';font-weight:500">'+fa(Math.abs(r.bal))+' '+(d?'Dr':'Cr')+'</td></tr>';}).join('')+'</tbody></table>';
+  DB.parties.map(function(p){var r=getSum(p);var d=r.bal>=0;var c=d?'#16a34a':'#dc2626';return'<tr><td style="font-weight:500">'+p.name+'</td><td style="color:'+c+'">'+fa(Math.abs(r.bal))+' '+(d?'Cr':'Dr')+'</td><td style="color:#2563eb">'+fa(r.interest)+'</td><td style="color:'+c+';font-weight:500">'+fa(Math.abs(r.bal))+' '+(d?'Cr':'Dr')+'</td></tr>';}).join('')+'</tbody></table>';
 }
 
 function renderParties(){
@@ -590,12 +622,12 @@ function renderParties(){
   if(!DB.parties.length){container.innerHTML='<div class="empty">No parties yet.</div>';return;}
   container.innerHTML='';
   DB.parties.forEach(function(p){
-    var r=getSum(p);var d=r.bal>=0;var c=d?'#dc2626':'#16a34a';
+    var r=getSum(p);var d=r.bal>=0;var c=d?'#16a34a':'#dc2626';
     var row=document.createElement('div');row.className='prow';
     row.innerHTML='<div><div style="font-weight:500">'+p.name+' <span class="tag">'+p.type+'</span></div>'+
       '<div style="font-size:11px;color:#888;margin-top:2px">'+(p.rate||24)+'% p.a. · '+(p.itype||'Compound')+' · '+(p.intjv===false?'No interest JV':'JV '+(p.jvfreq||'Monthly'))+(p.phone?' · '+p.phone:'')+'</div></div>'+
       '<div style="display:flex;align-items:center;gap:8px">'+
-      '<div style="text-align:right"><div style="font-weight:500;color:'+c+'">'+fa(Math.abs(r.bal))+' '+(d?'Dr':'Cr')+'</div><div style="font-size:11px;color:#888">Int: '+fa(r.interest)+'</div></div>'+
+      '<div style="text-align:right"><div style="font-weight:500;color:'+c+'">'+fa(Math.abs(r.bal))+' '+(d?'Cr':'Dr')+'</div><div style="font-size:11px;color:#888">Int: '+fa(r.interest)+'</div></div>'+
       '<button class="btn btn-sm" title="Share view-only link">🔗</button><button class="btn btn-sm" title="Edit">✏️</button><button class="btn btn-sm btn-danger" title="Delete">🗑️</button></div>';
     var btns=row.querySelectorAll('button');
     btns[0].addEventListener('click',function(){openShareModal(p);});
@@ -686,7 +718,7 @@ function loadPartyRep(){
     parties.forEach(function(party){
       var res=runEngine(party,DB.txns.filter(function(t){return t.pid===party.id;}),from,to);
       var d=res.closingBalance>=0;if(d)dr+=res.closingBalance;else cr+=Math.abs(res.closingBalance);it+=res.totalInterest;
-      rowsH+='<tr><td style="font-weight:500">'+party.name+'</td><td class="num" style="color:'+(d?'#dc2626':'#16a34a')+'">'+fa(Math.abs(res.closingBalance))+' '+(d?'Dr':'Cr')+'</td><td class="num" style="color:#2563eb">'+fa(res.totalInterest)+'</td></tr>';
+      rowsH+='<tr><td style="font-weight:500">'+party.name+'</td><td class="num" style="color:'+(d?'#16a34a':'#dc2626')+'">'+fa(Math.abs(res.closingBalance))+' '+(d?'Cr':'Dr')+'</td><td class="num" style="color:#2563eb">'+fa(res.totalInterest)+'</td></tr>';
     });
     var sc=document.createElement('div');sc.className='card';
     sc.innerHTML='<div class="row-hd"><h2>Combined summary — '+parties.length+' parties · '+fd(from)+' to '+fd(to)+'</h2></div>'+
@@ -699,9 +731,9 @@ function loadPartyRep(){
 function appendPartyLedgerCard(body,party,from,to,showMg,hideCls){
   var res=runEngine(party,DB.txns.filter(function(t){return t.pid===party.id;}),from,to);
   var isdr=res.closingBalance>=0;
-  if(showMg){var mg=document.createElement('div');mg.className='mg';mg.innerHTML='<div class="mc"><div class="ml">Closing balance</div><div class="mv" style="color:'+(isdr?'#dc2626':'#16a34a')+'">'+fa(Math.abs(res.closingBalance))+' '+(isdr?'Dr':'Cr')+'</div></div><div class="mc"><div class="ml">Total interest posted</div><div class="mv" style="color:#2563eb">'+fa(res.totalInterest)+'</div></div>';body.appendChild(mg);}
+  if(showMg){var mg=document.createElement('div');mg.className='mg';mg.innerHTML='<div class="mc"><div class="ml">Closing balance</div><div class="mv" style="color:'+(isdr?'#16a34a':'#dc2626')+'">'+fa(Math.abs(res.closingBalance))+' '+(isdr?'Cr':'Dr')+'</div></div><div class="mc"><div class="ml">Total interest posted</div><div class="mv" style="color:#2563eb">'+fa(res.totalInterest)+'</div></div>';body.appendChild(mg);}
   var card=document.createElement('div');card.className='card';
-  card.innerHTML='<div style="margin-bottom:10px"><div style="font-weight:500">'+party.name+(showMg?'':' · <span style="font-weight:400;color:'+(isdr?'#dc2626':'#16a34a')+'">'+fa(Math.abs(res.closingBalance))+' '+(isdr?'Dr':'Cr')+'</span> · <span style="font-weight:400;color:#2563eb">Int '+fa(res.totalInterest)+'</span>')+'</div>'+
+  card.innerHTML='<div style="margin-bottom:10px"><div style="font-weight:500">'+party.name+(showMg?'':' · <span style="font-weight:400;color:'+(isdr?'#16a34a':'#dc2626')+'">'+fa(Math.abs(res.closingBalance))+' '+(isdr?'Cr':'Dr')+'</span> · <span style="font-weight:400;color:#2563eb">Int '+fa(res.totalInterest)+'</span>')+'</div>'+
     '<div style="font-size:11px;color:#888">'+fd(from)+' to '+fd(to)+'</div></div>';
   var wrap=document.createElement('div');wrap.style.overflowX='auto';
   var tbl=document.createElement('table');tbl.style.tableLayout='auto';
@@ -722,7 +754,7 @@ function appendPartyLedgerCard(body,party,from,to,showMg,hideCls){
     else typeCell='<span style="font-size:10px;color:#999">Accrual</span>';
     var cc=row.ccid?DB.cc.find(function(x){return x.id===row.ccid;}):null;
     var narrCell=isSI?row.label:(row.narr||'');
-    var balCell=isSI?'':(fa(Math.abs(row.balance))+' '+(row.balance>=0?'Dr':'Cr'));
+    var balCell=isSI?'':(fa(Math.abs(row.balance))+' '+(row.balance>=0?'Cr':'Dr'));
     var intCell=isSI?fa(row.monthTotal):(row.accrInt?fa(row.accrInt):'');
     tr.innerHTML='<td class="c-date" style="white-space:nowrap">'+fd(row.date)+'</td><td class="c-type">'+typeCell+'</td>'+
       '<td class="c-mode">'+((row.rowType==='payment'||row.rowType==='receipt')&&row.mode?'<span class="tag">'+row.mode+'</span>':'')+'</td>'+
@@ -730,7 +762,7 @@ function appendPartyLedgerCard(body,party,from,to,showMg,hideCls){
       '<td class="c-narr" style="font-size:11px;color:#888">'+narrCell+'</td>'+
       '<td class="num" style="color:#dc2626">'+(!isSI&&row.debit&&row.debit>0?fa(row.debit):'')+'</td>'+
       '<td class="num" style="color:#16a34a">'+(!isSI&&row.credit&&row.credit>0?fa(row.credit):'')+'</td>'+
-      '<td class="num" style="font-weight:500;color:'+(row.balance>=0?'#dc2626':'#16a34a')+'">'+balCell+'</td>'+
+      '<td class="num" style="font-weight:500;color:'+(row.balance>=0?'#16a34a':'#dc2626')+'">'+balCell+'</td>'+
       '<td class="num c-days" style="color:#999">'+(!isSI&&row.accrDays?row.accrDays+' d':'')+'</td>'+
       '<td class="num c-int" style="color:#2563eb">'+intCell+'</td>'+
       '<td class="c-ipd"></td>'+
@@ -757,7 +789,7 @@ function appendPartyLedgerCard(body,party,from,to,showMg,hideCls){
   foot.innerHTML='<td class="c-date"></td><td class="c-type"></td><td class="c-mode"></td><td class="c-cc"></td><td class="c-narr"></td>'+
     '<td class="num" style="font-weight:600">Totals</td>'+
     '<td class="num"></td>'+
-    '<td class="num" style="font-weight:600">'+fa(Math.abs(res.closingBalance))+' '+(isdr?'Dr':'Cr')+'</td>'+
+    '<td class="num" style="font-weight:600">'+fa(Math.abs(res.closingBalance))+' '+(isdr?'Cr':'Dr')+'</td>'+
     '<td class="num c-days"></td>'+
     '<td class="num c-int" style="color:#2563eb;font-weight:600">'+fa(res.totalInterest)+'</td>'+
     '<td class="c-ipd"></td>'+
@@ -780,10 +812,10 @@ function loadCCRep(){
   if(!rng.length&&Math.abs(opening)<0.001){body.innerHTML='<div class="card"><div class="empty">No transactions found</div></div>';return;}
   var od=opening>=0,cd=closing>=0;
   body.innerHTML='<div class="mg">'+
-    '<div class="mc"><div class="ml">Opening balance</div><div class="mv" style="color:'+(od?'#dc2626':'#16a34a')+'">'+fa(Math.abs(opening))+' '+(od?'Dr':'Cr')+'</div></div>'+
+    '<div class="mc"><div class="ml">Opening balance</div><div class="mv" style="color:'+(od?'#16a34a':'#dc2626')+'">'+fa(Math.abs(opening))+' '+(od?'Cr':'Dr')+'</div></div>'+
     '<div class="mc"><div class="ml">Total out</div><div class="mv" style="color:#dc2626">'+fa(out)+'</div></div>'+
     '<div class="mc"><div class="ml">Total in</div><div class="mv" style="color:#16a34a">'+fa(inp)+'</div></div>'+
-    '<div class="mc"><div class="ml">Closing balance</div><div class="mv" style="color:'+(cd?'#dc2626':'#16a34a')+'">'+fa(Math.abs(closing))+' '+(cd?'Dr':'Cr')+'</div></div>'+
+    '<div class="mc"><div class="ml">Closing balance</div><div class="mv" style="color:'+(cd?'#16a34a':'#dc2626')+'">'+fa(Math.abs(closing))+' '+(cd?'Cr':'Dr')+'</div></div>'+
     '</div>';
   var card=document.createElement('div');card.className='card';
   var wrap=document.createElement('div');wrap.style.overflowX='auto';
@@ -792,7 +824,7 @@ function loadCCRep(){
   var tbody=document.createElement('tbody');
   var orow=document.createElement('tr');orow.className='tr-int';
   orow.innerHTML='<td style="white-space:nowrap">'+fd(from||((rng[0]&&rng[0].date)||tod()))+'</td><td colspan="6"><span class="tag tag-i">Opening balance</span></td>'+
-    '<td class="num" style="font-weight:600;color:'+(od?'#dc2626':'#16a34a')+'">'+fa(Math.abs(opening))+' '+(od?'Dr':'Cr')+'</td><td></td>';
+    '<td class="num" style="font-weight:600;color:'+(od?'#16a34a':'#dc2626')+'">'+fa(Math.abs(opening))+' '+(od?'Cr':'Dr')+'</td><td></td>';
   tbody.appendChild(orow);
   var run=opening;
   rng.forEach(function(t){
@@ -804,7 +836,7 @@ function loadCCRep(){
       '<td class="num" style="color:#dc2626">'+(t.tt==='payment'?fa(t.amt):'')+'</td>'+
       '<td class="num" style="color:#16a34a">'+(t.tt==='receipt'?fa(t.amt):'')+'</td>'+
       '<td><span class="tag">'+t.mode+'</span></td>'+
-      '<td class="num" style="font-weight:500;color:'+(rd?'#dc2626':'#16a34a')+'">'+fa(Math.abs(run))+' '+(rd?'Dr':'Cr')+'</td>'+
+      '<td class="num" style="font-weight:500;color:'+(rd?'#16a34a':'#dc2626')+'">'+fa(Math.abs(run))+' '+(rd?'Cr':'Dr')+'</td>'+
       '<td><button class="btn btn-sm" style="margin-right:4px" title="Edit">✏️</button><button class="btn btn-sm btn-danger" title="Delete">🗑️</button></td>';
     var btns=tr.querySelectorAll('button');
     btns[0].addEventListener('click',function(){openEdit(t.id);});
@@ -812,7 +844,7 @@ function loadCCRep(){
     tbody.appendChild(tr);
   });
   var f1=document.createElement('tr');f1.className='tr-foot';
-  f1.innerHTML='<td colspan="4" style="text-align:right;font-weight:600">Total</td><td class="num" style="color:#dc2626;font-weight:600">'+fa(out)+'</td><td class="num" style="color:#16a34a;font-weight:600">'+fa(inp)+'</td><td></td><td class="num" style="font-weight:600;color:'+(cd?'#dc2626':'#16a34a')+'">'+fa(Math.abs(closing))+' '+(cd?'Dr':'Cr')+'</td><td></td>';
+  f1.innerHTML='<td colspan="4" style="text-align:right;font-weight:600">Total</td><td class="num" style="color:#dc2626;font-weight:600">'+fa(out)+'</td><td class="num" style="color:#16a34a;font-weight:600">'+fa(inp)+'</td><td></td><td class="num" style="font-weight:600;color:'+(cd?'#16a34a':'#dc2626')+'">'+fa(Math.abs(closing))+' '+(cd?'Cr':'Dr')+'</td><td></td>';
   tbody.appendChild(f1);tbl.appendChild(tbody);wrap.appendChild(tbl);card.appendChild(wrap);body.appendChild(card);
 }
 
@@ -1000,7 +1032,7 @@ document.getElementById('b-pcsv').addEventListener('click',function(){
   parties.forEach(function(party){
     var res=runEngine(party,DB.txns.filter(function(t){return t.pid===party.id;}),from,to);
     csv+=party.name+' ('+fd(from)+' to '+fd(to)+')\nDate,Type,Mode,Cost center,Narration,Payment (Dr),Receipt (Cr),Balance,Days held,Interest,Interest paid date\n';
-    res.ledger.forEach(function(r){if(r.rowType==='segment')return;var isSI=r.rowType==='simpleint';var cn=(!isSI&&r.ccid)?((DB.cc.find(function(c){return c.id===r.ccid;})||{}).name||''):'';var ipd=isSI?paidDate(party.id,r.ym):'';csv+='"'+fd(r.date)+'","'+(isSI?'interest':r.rowType)+'","'+(isSI?'':(r.mode||''))+'","'+cn+'","'+(isSI?r.label:(r.narr||''))+'",'+(!isSI&&r.debit&&r.debit>0?r.debit.toFixed(2):'')+','+(!isSI&&r.credit&&r.credit>0?r.credit.toFixed(2):'')+',"'+(isSI?'':(fa(Math.abs(r.balance))+(r.balance>=0?' Dr':' Cr')))+'","'+(!isSI&&r.accrDays?r.accrDays:'')+'","'+(isSI?r.monthTotal.toFixed(2):(r.accrInt?r.accrInt.toFixed(2):''))+'","'+(ipd?fd(ipd):'')+'"\n';});
+    res.ledger.forEach(function(r){if(r.rowType==='segment')return;var isSI=r.rowType==='simpleint';var cn=(!isSI&&r.ccid)?((DB.cc.find(function(c){return c.id===r.ccid;})||{}).name||''):'';var ipd=isSI?paidDate(party.id,r.ym):'';csv+='"'+fd(r.date)+'","'+(isSI?'interest':r.rowType)+'","'+(isSI?'':(r.mode||''))+'","'+cn+'","'+(isSI?r.label:(r.narr||''))+'",'+(!isSI&&r.debit&&r.debit>0?r.debit.toFixed(2):'')+','+(!isSI&&r.credit&&r.credit>0?r.credit.toFixed(2):'')+',"'+(isSI?'':(fa(Math.abs(r.balance))+(r.balance>=0?' Cr':' Dr')))+'","'+(!isSI&&r.accrDays?r.accrDays:'')+'","'+(isSI?r.monthTotal.toFixed(2):(r.accrInt?r.accrInt.toFixed(2):''))+'","'+(ipd?fd(ipd):'')+'"\n';});
     csv+='\n';
   });
   dlCSV(csv,(parties.length===1?parties[0].name:parties.length+'_parties')+'_ledger_'+to+'.csv');
@@ -1019,16 +1051,16 @@ function partyLedgerSection(party,res,from,to){
       '<td>'+(isSI?r.label:(r.narr||''))+'</td>'+
       '<td style="text-align:right;color:#dc2626">'+(!isSI&&r.debit&&r.debit>0?fa(r.debit):'')+'</td>'+
       '<td style="text-align:right;color:#16a34a">'+(!isSI&&r.credit&&r.credit>0?fa(r.credit):'')+'</td>'+
-      '<td style="text-align:right;font-weight:600;color:'+(r.balance>=0?'#dc2626':'#16a34a')+'">'+(isSI?'':(fa(Math.abs(r.balance))+' '+(r.balance>=0?'Dr':'Cr')))+'</td>'+
+      '<td style="text-align:right;font-weight:600;color:'+(r.balance>=0?'#16a34a':'#dc2626')+'">'+(isSI?'':(fa(Math.abs(r.balance))+' '+(r.balance>=0?'Cr':'Dr')))+'</td>'+
       '<td style="text-align:right">'+(!isSI&&r.accrDays?r.accrDays+' d':'')+'</td>'+
       '<td style="text-align:right;color:#2563eb">'+(isSI?fa(r.monthTotal):(r.accrInt?fa(r.accrInt):''))+'</td>'+
       '<td>'+(ipd?fd(ipd):'')+'</td></tr>';
   }).join('');
   return '<h1>'+party.name+'</h1><p>'+fd(from)+' to '+fd(to)+'</p>'+
-    '<div class="sum"><div class="box"><div class="lbl">Closing balance</div><div class="val" style="color:'+(isdr?'#dc2626':'#16a34a')+'">'+fa(Math.abs(res.closingBalance))+' '+(isdr?'Dr':'Cr')+'</div></div>'+
+    '<div class="sum"><div class="box"><div class="lbl">Closing balance</div><div class="val" style="color:'+(isdr?'#16a34a':'#dc2626')+'">'+fa(Math.abs(res.closingBalance))+' '+(isdr?'Cr':'Dr')+'</div></div>'+
     '<div class="box"><div class="lbl">Interest posted</div><div class="val" style="color:#2563eb">'+fa(res.totalInterest)+'</div></div></div>'+
     '<table><thead><tr><th>Date</th><th>Type</th><th>Mode</th><th>Cost center</th><th>Narration</th><th style="text-align:right">Payment (Dr)</th><th style="text-align:right">Receipt (Cr)</th><th style="text-align:right">Balance</th><th style="text-align:right">Days</th><th style="text-align:right">Interest</th><th>Interest paid date</th></tr></thead><tbody>'+rows+
-    '<tr class="tf"><td colspan="7" style="text-align:right">Closing balance / Total interest</td><td style="text-align:right">'+fa(Math.abs(res.closingBalance))+' '+(isdr?'Dr':'Cr')+'</td><td></td><td style="text-align:right;color:#2563eb">'+fa(res.totalInterest)+'</td><td></td></tr></tbody></table>';
+    '<tr class="tf"><td colspan="7" style="text-align:right">Closing balance / Total interest</td><td style="text-align:right">'+fa(Math.abs(res.closingBalance))+' '+(isdr?'Cr':'Dr')+'</td><td></td><td style="text-align:right;color:#2563eb">'+fa(res.totalInterest)+'</td><td></td></tr></tbody></table>';
 }
 function ledgerPdfDoc(title,inner){
   printPDF('<!DOCTYPE html><html><head><meta charset="utf-8"><title>'+title+'</title><style>html{-webkit-print-color-adjust:exact;print-color-adjust:exact}body{font-family:Arial,sans-serif;font-size:11px;margin:28px;color:#222}h1{font-size:15px;margin-bottom:4px}p{color:#888;font-size:10px;margin-bottom:12px}.sum{display:flex;gap:14px;margin-bottom:14px;flex-wrap:wrap}.box{background:#f5f5f5;padding:8px 12px;border-radius:4px;min-width:110px}.lbl{font-size:9px;color:#888;margin-bottom:2px}.val{font-size:13px;font-weight:700}table{width:100%;border-collapse:collapse;font-size:10px;margin-bottom:18px}th{background:#f0f0f0;padding:5px 6px;text-align:left;border-bottom:1px solid #ddd}td{padding:4px 6px;border-bottom:1px solid #eee}.tf{font-weight:700;background:#f9f9f9}@media print{#ctrl{display:none!important}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}}</style></head><body>'+inner+'</body></html>');
@@ -1049,8 +1081,8 @@ document.getElementById('b-ccsv').addEventListener('click',function(){
   var opening=DB.txns.filter(function(t){return inCC(t)&&from&&t.date<from;}).reduce(function(s,t){return s+ccNet(t);},0);
   var rng=DB.txns.filter(function(t){return inCC(t)&&(!from||t.date>=from)&&(!to||t.date<=to);}).sort(function(a,b){return a.date.localeCompare(b.date);});
   var run=opening,csv='Date,Party,Cost center,Narration,Payment (Dr),Receipt (Cr),Mode,Running balance\n';
-  csv+='"'+fd(from||'')+'",,,Opening balance,,,,"'+fa(Math.abs(opening))+(opening>=0?' Dr':' Cr')+'"\n';
-  rng.forEach(function(t){run+=ccNet(t);var p=DB.parties.find(function(x){return x.id===t.pid;});var c=DB.cc.find(function(x){return x.id===t.ccid;});csv+=fd(t.date)+',"'+(p?p.name:'')+'","'+(c?c.name:'')+'","'+(t.narr||'')+'",'+( t.tt==='payment'?t.amt:'')+','+(t.tt==='receipt'?t.amt:'')+','+t.mode+',"'+fa(Math.abs(run))+(run>=0?' Dr':' Cr')+'"\n';});
+  csv+='"'+fd(from||'')+'",,,Opening balance,,,,"'+fa(Math.abs(opening))+(opening>=0?' Cr':' Dr')+'"\n';
+  rng.forEach(function(t){run+=ccNet(t);var p=DB.parties.find(function(x){return x.id===t.pid;});var c=DB.cc.find(function(x){return x.id===t.ccid;});csv+=fd(t.date)+',"'+(p?p.name:'')+'","'+(c?c.name:'')+'","'+(t.narr||'')+'",'+( t.tt==='payment'?t.amt:'')+','+(t.tt==='receipt'?t.amt:'')+','+t.mode+',"'+fa(Math.abs(run))+(run>=0?' Cr':' Dr')+'"\n';});
   dlCSV(csv,'cc_'+ccLabel(sel,'_cost_centers').replace(/[^a-z0-9]+/gi,'_')+'_'+to+'.csv');
 });
 document.getElementById('b-cpdf').addEventListener('click',function(){
@@ -1061,9 +1093,9 @@ document.getElementById('b-cpdf').addEventListener('click',function(){
   var out=rng.filter(function(t){return t.tt==='payment';}).reduce(function(s,t){return s+parseFloat(t.amt);},0);
   var inp=rng.filter(function(t){return t.tt==='receipt';}).reduce(function(s,t){return s+parseFloat(t.amt);},0);
   var closing=opening+inp-out,od=opening>=0,cd=closing>=0,ccn=ccLabel(sel),run=opening;
-  var rows='<tr style="background:#eff6ff;color:#2563eb"><td>'+fd(from||'')+'</td><td colspan="5">Opening balance</td><td style="text-align:right;font-weight:700">'+fa(Math.abs(opening))+(od?' Dr':' Cr')+'</td></tr>';
-  rows+=rng.map(function(t){run+=ccNet(t);var p=DB.parties.find(function(x){return x.id===t.pid;});var c=DB.cc.find(function(x){return x.id===t.ccid;});return'<tr><td>'+fd(t.date)+'</td><td>'+(p?p.name:'—')+'</td><td>'+(c?c.name:'—')+'</td><td>'+(t.narr||'—')+'</td><td style="text-align:right;color:#dc2626">'+(t.tt==='payment'?fa(t.amt):'')+'</td><td style="text-align:right;color:#16a34a">'+(t.tt==='receipt'?fa(t.amt):'')+'</td><td style="text-align:right;font-weight:600">'+fa(Math.abs(run))+(run>=0?' Dr':' Cr')+'</td></tr>';}).join('');
-  printPDF('<!DOCTYPE html><html><head><meta charset="utf-8"><title>'+ccn+'</title><style>html{-webkit-print-color-adjust:exact;print-color-adjust:exact}body{font-family:Arial,sans-serif;font-size:11px;margin:28px}h1{font-size:15px;margin-bottom:4px}p{color:#888;font-size:10px;margin-bottom:12px}.sum{display:flex;gap:14px;margin-bottom:14px;flex-wrap:wrap}.box{background:#f5f5f5;padding:8px 12px;border-radius:4px;min-width:100px}.lbl{font-size:9px;color:#888}.val{font-size:13px;font-weight:700}table{width:100%;border-collapse:collapse;font-size:10px}th{background:#f0f0f0;padding:5px 6px;text-align:left;border-bottom:1px solid #ddd}td{padding:4px 6px;border-bottom:1px solid #eee}.tf{font-weight:700;background:#f9f9f9}@media print{#ctrl{display:none!important}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}}</style></head><body><h1>'+ccn+'</h1><p>'+fd(from)+' to '+fd(to)+'</p><div class="sum"><div class="box"><div class="lbl">Opening</div><div class="val" style="color:'+(od?'#dc2626':'#16a34a')+'">'+fa(Math.abs(opening))+(od?' Dr':' Cr')+'</div></div><div class="box"><div class="lbl">Total out</div><div class="val" style="color:#dc2626">'+fa(out)+'</div></div><div class="box"><div class="lbl">Total in</div><div class="val" style="color:#16a34a">'+fa(inp)+'</div></div><div class="box"><div class="lbl">Closing</div><div class="val" style="color:'+(cd?'#dc2626':'#16a34a')+'">'+fa(Math.abs(closing))+(cd?' Dr':' Cr')+'</div></div></div><table><thead><tr><th>Date</th><th>Party</th><th>Cost center</th><th>Narration</th><th style="text-align:right">Payment (Dr)</th><th style="text-align:right">Receipt (Cr)</th><th style="text-align:right">Running balance</th></tr></thead><tbody>'+rows+'<tr class="tf"><td colspan="4">Total</td><td style="text-align:right;color:#dc2626">'+fa(out)+'</td><td style="text-align:right;color:#16a34a">'+fa(inp)+'</td><td style="text-align:right">'+fa(Math.abs(closing))+(cd?' Dr':' Cr')+'</td></tr></tbody></table></body></html>');
+  var rows='<tr style="background:#eff6ff;color:#2563eb"><td>'+fd(from||'')+'</td><td colspan="5">Opening balance</td><td style="text-align:right;font-weight:700">'+fa(Math.abs(opening))+(od?' Cr':' Dr')+'</td></tr>';
+  rows+=rng.map(function(t){run+=ccNet(t);var p=DB.parties.find(function(x){return x.id===t.pid;});var c=DB.cc.find(function(x){return x.id===t.ccid;});return'<tr><td>'+fd(t.date)+'</td><td>'+(p?p.name:'—')+'</td><td>'+(c?c.name:'—')+'</td><td>'+(t.narr||'—')+'</td><td style="text-align:right;color:#dc2626">'+(t.tt==='payment'?fa(t.amt):'')+'</td><td style="text-align:right;color:#16a34a">'+(t.tt==='receipt'?fa(t.amt):'')+'</td><td style="text-align:right;font-weight:600">'+fa(Math.abs(run))+(run>=0?' Cr':' Dr')+'</td></tr>';}).join('');
+  printPDF('<!DOCTYPE html><html><head><meta charset="utf-8"><title>'+ccn+'</title><style>html{-webkit-print-color-adjust:exact;print-color-adjust:exact}body{font-family:Arial,sans-serif;font-size:11px;margin:28px}h1{font-size:15px;margin-bottom:4px}p{color:#888;font-size:10px;margin-bottom:12px}.sum{display:flex;gap:14px;margin-bottom:14px;flex-wrap:wrap}.box{background:#f5f5f5;padding:8px 12px;border-radius:4px;min-width:100px}.lbl{font-size:9px;color:#888}.val{font-size:13px;font-weight:700}table{width:100%;border-collapse:collapse;font-size:10px}th{background:#f0f0f0;padding:5px 6px;text-align:left;border-bottom:1px solid #ddd}td{padding:4px 6px;border-bottom:1px solid #eee}.tf{font-weight:700;background:#f9f9f9}@media print{#ctrl{display:none!important}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}}</style></head><body><h1>'+ccn+'</h1><p>'+fd(from)+' to '+fd(to)+'</p><div class="sum"><div class="box"><div class="lbl">Opening</div><div class="val" style="color:'+(od?'#16a34a':'#dc2626')+'">'+fa(Math.abs(opening))+(od?' Cr':' Dr')+'</div></div><div class="box"><div class="lbl">Total out</div><div class="val" style="color:#dc2626">'+fa(out)+'</div></div><div class="box"><div class="lbl">Total in</div><div class="val" style="color:#16a34a">'+fa(inp)+'</div></div><div class="box"><div class="lbl">Closing</div><div class="val" style="color:'+(cd?'#16a34a':'#dc2626')+'">'+fa(Math.abs(closing))+(cd?' Cr':' Dr')+'</div></div></div><table><thead><tr><th>Date</th><th>Party</th><th>Cost center</th><th>Narration</th><th style="text-align:right">Payment (Dr)</th><th style="text-align:right">Receipt (Cr)</th><th style="text-align:right">Running balance</th></tr></thead><tbody>'+rows+'<tr class="tf"><td colspan="4">Total</td><td style="text-align:right;color:#dc2626">'+fa(out)+'</td><td style="text-align:right;color:#16a34a">'+fa(inp)+'</td><td style="text-align:right">'+fa(Math.abs(closing))+(cd?' Cr':' Dr')+'</td></tr></tbody></table></body></html>');
 });
 
 // ---- Firebase Auth + cloud data sync ----
@@ -1078,8 +1110,8 @@ function startApp(user){
   checkImport();
   if(ledgerSub)return;
   ledgerSub=LEDGER.onSnapshot(function(doc){
-    if(doc.exists){var d=doc.data();DB={parties:d.parties||[],cc:d.cc||[],modes:d.modes||[],txns:d.txns||[],shares:d.shares||[],intpay:d.intpay||{}};}
-    else{DB={parties:[],cc:[],modes:DEFAULT_MODES.slice(),txns:[],shares:[],intpay:{}};LEDGER.set(DB).catch(function(){});}
+    if(doc.exists){var d=doc.data();DB={parties:d.parties||[],cc:d.cc||[],modes:d.modes||[],txns:d.txns||[],shares:d.shares||[],intpay:d.intpay||{},notes:d.notes||[]};}
+    else{DB={parties:[],cc:[],modes:DEFAULT_MODES.slice(),txns:[],shares:[],intpay:{},notes:[]};LEDGER.set(DB).catch(function(){});}
     if(!DB.modes||!DB.modes.length)DB.modes=DEFAULT_MODES.slice();
     refreshUI();
   },function(err){console.error(err);alert('Cloud sync error: '+err.message+'\n(Check that your email is authorised in the Firestore rules.)');});
@@ -1115,7 +1147,7 @@ function initViewer(token){
 function viewerRes(){return runEngine(VSHARE.party,VSHARE.txns||[],document.getElementById('v-from').value,document.getElementById('v-to').value);}
 function renderViewer(){
   if(!VSHARE)return;var res=viewerRes();var isdr=res.closingBalance>=0;var body=document.getElementById('v-body');
-  var h='<div class="mg"><div class="mc"><div class="ml">Closing balance</div><div class="mv" style="color:'+(isdr?'#dc2626':'#16a34a')+'">'+fa(Math.abs(res.closingBalance))+' '+(isdr?'Dr':'Cr')+'</div></div><div class="mc"><div class="ml">Total interest posted</div><div class="mv" style="color:#2563eb">'+fa(res.totalInterest)+'</div></div></div>';
+  var h='<div class="mg"><div class="mc"><div class="ml">Closing balance</div><div class="mv" style="color:'+(isdr?'#16a34a':'#dc2626')+'">'+fa(Math.abs(res.closingBalance))+' '+(isdr?'Cr':'Dr')+'</div></div><div class="mc"><div class="ml">Total interest posted</div><div class="mv" style="color:#2563eb">'+fa(res.totalInterest)+'</div></div></div>';
   h+='<div class="card"><div style="overflow-x:auto"><table style="table-layout:auto"><thead><tr><th>Date</th><th>Type</th><th>Mode</th><th>Narration</th><th class="num">Payment (Dr)</th><th class="num">Receipt (Cr)</th><th class="num">Running balance</th><th class="num">Days held</th><th class="num">Interest (₹)</th><th>Interest paid date</th></tr></thead><tbody>';
   res.ledger.forEach(function(r){if(r.rowType==='segment')return;
     var isSI=r.rowType==='simpleint';
@@ -1127,12 +1159,12 @@ function renderViewer(){
       '<td style="font-size:11px;color:#888">'+(isSI?r.label:(r.narr||''))+'</td>'+
       '<td class="num" style="color:#dc2626">'+(!isSI&&r.debit&&r.debit>0?fa(r.debit):'')+'</td>'+
       '<td class="num" style="color:#16a34a">'+(!isSI&&r.credit&&r.credit>0?fa(r.credit):'')+'</td>'+
-      '<td class="num" style="font-weight:500;color:'+(r.balance>=0?'#dc2626':'#16a34a')+'">'+(isSI?'':(fa(Math.abs(r.balance))+' '+(r.balance>=0?'Dr':'Cr')))+'</td>'+
+      '<td class="num" style="font-weight:500;color:'+(r.balance>=0?'#16a34a':'#dc2626')+'">'+(isSI?'':(fa(Math.abs(r.balance))+' '+(r.balance>=0?'Cr':'Dr')))+'</td>'+
       '<td class="num" style="color:#999">'+(!isSI&&r.accrDays?r.accrDays+' d':'')+'</td>'+
       '<td class="num" style="color:#2563eb">'+(isSI?fa(r.monthTotal):(r.accrInt?fa(r.accrInt):''))+'</td>'+
       '<td>'+(ipd?fd(ipd):'')+'</td></tr>';
   });
-  h+='<tr class="tr-foot"><td colspan="6" style="text-align:right;font-weight:600">Closing balance / Total interest</td><td class="num" style="font-weight:600">'+fa(Math.abs(res.closingBalance))+' '+(isdr?'Dr':'Cr')+'</td><td></td><td class="num" style="color:#2563eb;font-weight:600">'+fa(res.totalInterest)+'</td><td></td></tr>';
+  h+='<tr class="tr-foot"><td colspan="6" style="text-align:right;font-weight:600">Closing balance / Total interest</td><td class="num" style="font-weight:600">'+fa(Math.abs(res.closingBalance))+' '+(isdr?'Cr':'Dr')+'</td><td></td><td class="num" style="color:#2563eb;font-weight:600">'+fa(res.totalInterest)+'</td><td></td></tr>';
   h+='</tbody></table></div></div>';
   body.innerHTML=h;
 }
