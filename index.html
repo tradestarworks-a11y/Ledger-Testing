@@ -227,7 +227,7 @@ var LEDGER=fbDB.collection('ledger').doc('main');
         <div class="fg"><label>Date</label><input id="t-date" type="date"></div>
       </div>
       <div class="grid3">
-        <div class="fg"><label>Amount (₹)</label><input id="t-amt" type="number" placeholder="0.00"></div>
+        <div class="fg"><label>Amount (₹)</label><input id="t-amt" type="number" placeholder="0.00"><div id="t-amt-words" style="font-size:11px;color:#2563eb;margin-top:3px;min-height:14px"></div></div>
         <div class="fg"><label>Cost center</label>
           <div class="il"><select id="t-cc"><option value="">None</option></select><button class="btn btn-sm" id="b-qcc">+</button></div>
           <div class="quick-add-bar" id="qa-cc"><input id="qa-cc-input" placeholder="New cost center name"><button class="ok-btn" id="qa-cc-ok">Add</button><button id="qa-cc-cancel">Cancel</button></div>
@@ -320,7 +320,7 @@ var LEDGER=fbDB.collection('ledger').doc('main');
   <div class="card" style="border:2px solid #e0e0e0">
     <div class="row-hd" style="margin-bottom:1rem"><h2 style="font-size:14px">Edit transaction</h2><button class="btn btn-sm" id="b-closeedit">✕</button></div>
     <div class="grid2"><div class="fg"><label>Party</label><select id="e-party"></select></div><div class="fg"><label>Date</label><input id="e-date" type="date"></div></div>
-    <div class="grid3"><div class="fg"><label>Amount (₹)</label><input id="e-amt" type="number"></div><div class="fg"><label>Cost center</label><select id="e-cc"></select></div><div class="fg"><label>Narration</label><input id="e-narr"></div></div>
+    <div class="grid3"><div class="fg"><label>Amount (₹)</label><input id="e-amt" type="number"><div id="e-amt-words" style="font-size:11px;color:#2563eb;margin-top:3px;min-height:14px"></div></div><div class="fg"><label>Cost center</label><select id="e-cc"></select></div><div class="fg"><label>Narration</label><input id="e-narr"></div></div>
     <div class="grid2"><div class="fg"><label>Type</label><select id="e-type"><option value="payment">Payment</option><option value="receipt">Receipt</option></select></div><div class="fg"><label>Mode</label><select id="e-mode"></select></div></div>
     <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn" id="b-canceledit">Cancel</button><button class="btn btn-primary" id="b-saveedit">Save changes</button></div>
   </div>
@@ -388,6 +388,19 @@ function tod(){return new Date().toISOString().split('T')[0];}
 function fom(){var d=new Date();return new Date(d.getFullYear(),d.getMonth(),1).toISOString().split('T')[0];}
 function fd(iso){if(!iso)return'—';var p=iso.split('-');return p[2]+'-'+p[1]+'-'+p[0];}
 function fa(n){return'₹'+parseFloat(n||0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});}
+function amountWords(val){
+  var n=parseFloat(val);if(isNaN(n)||n===0)return '';
+  var neg=n<0;n=Math.abs(n);
+  var total=Math.round(n*100),rupees=Math.floor(total/100),paise=total%100;
+  var a=['','One','Two','Three','Four','Five','Six','Seven','Eight','Nine','Ten','Eleven','Twelve','Thirteen','Fourteen','Fifteen','Sixteen','Seventeen','Eighteen','Nineteen'];
+  var b=['','','Twenty','Thirty','Forty','Fifty','Sixty','Seventy','Eighty','Ninety'];
+  function two(x){return x<20?a[x]:b[Math.floor(x/10)]+(x%10?' '+a[x%10]:'');}
+  function three(x){var h=Math.floor(x/100),r=x%100;return (h?a[h]+' Hundred'+(r?' and ':''):'')+(r?two(r):'');}
+  function inWords(num){if(num===0)return 'Zero';var out='';var cr=Math.floor(num/10000000);num%=10000000;var la=Math.floor(num/100000);num%=100000;var th=Math.floor(num/1000);num%=1000;if(cr)out+=inWords(cr)+' Crore ';if(la)out+=two(la)+' Lakh ';if(th)out+=two(th)+' Thousand ';if(num)out+=three(num)+' ';return out.trim();}
+  var w=(neg?'Minus ':'')+'Rupees '+inWords(rupees);
+  if(paise>0)w+=' and '+two(paise)+' Paise';
+  return w+' only';
+}
 function diffDays(a,b){return Math.round((new Date(b)-new Date(a))/(1000*60*60*24));}
 function lastDayOfMonth(iso){var p=iso.split('-');return new Date(Date.UTC(+p[0],+p[1],0)).toISOString().split('T')[0];}
 function monthName(iso){var m=['January','February','March','April','May','June','July','August','September','October','November','December'];var p=iso.split('-');return m[(+p[1])-1]+' '+p[0];}
@@ -838,7 +851,7 @@ function editMode(id){var m=DB.modes.find(function(x){return x.id===id;});if(!m)
 function setTxnType(t){cType=t;document.getElementById('tb-pay').className='ttbtn pay'+(t==='payment'?' on':'');document.getElementById('tb-rec').className='ttbtn rec'+(t==='receipt'?' on':'');document.getElementById('txn-hint').className='hint '+(t==='payment'?'pay':'rec');document.getElementById('txn-hint').textContent=t==='payment'?'Money going out':'Money coming in';document.getElementById('txn-title').textContent=t==='payment'?'Record payment':'Record receipt';}
 function backLand(){document.getElementById('txn-land').style.display='block';document.getElementById('txn-form').style.display='none';}
 function startTxn(t){document.getElementById('txn-land').style.display='none';document.getElementById('txn-form').style.display='block';setTxnType(t);fillModeDD('t-mode','sel');if(!document.getElementById('t-date').value)document.getElementById('t-date').value=tod();}
-function openEdit(id){var t=DB.txns.find(function(x){return x.id===id;});if(!t)return;eTid=id;fillDD('e-party','sel');fillCCDD('e-cc','none');fillModeDD('e-mode','sel');document.getElementById('e-party').value=t.pid;document.getElementById('e-date').value=t.date;document.getElementById('e-amt').value=t.amt;document.getElementById('e-cc').value=t.ccid||'';document.getElementById('e-narr').value=t.narr||'';document.getElementById('e-type').value=t.tt;document.getElementById('e-mode').value=t.mode;document.getElementById('edit-modal').style.display='block';document.getElementById('edit-modal').scrollIntoView({behavior:'smooth'});}
+function openEdit(id){var t=DB.txns.find(function(x){return x.id===id;});if(!t)return;eTid=id;fillDD('e-party','sel');fillCCDD('e-cc','none');fillModeDD('e-mode','sel');document.getElementById('e-party').value=t.pid;document.getElementById('e-date').value=t.date;document.getElementById('e-amt').value=t.amt;document.getElementById('e-amt-words').textContent=amountWords(t.amt);document.getElementById('e-cc').value=t.ccid||'';document.getElementById('e-narr').value=t.narr||'';document.getElementById('e-type').value=t.tt;document.getElementById('e-mode').value=t.mode;document.getElementById('edit-modal').style.display='block';document.getElementById('edit-modal').scrollIntoView({behavior:'smooth'});}
 function closeEdit(){document.getElementById('edit-modal').style.display='none';eTid=null;}
 function toggleJvFreq(){document.getElementById('p-jvfreq-wrap').style.display=document.getElementById('p-intjv').checked?'':'none';}
 
@@ -892,10 +905,12 @@ document.getElementById('b-savetxn').addEventListener('click',function(){
   var pid=document.getElementById('t-party').value,date=document.getElementById('t-date').value,amt=document.getElementById('t-amt').value;
   if(!pid||!date||!amt)return;
   DB.txns.push({id:Date.now().toString(),pid:pid,date:date,amt:parseFloat(amt),tt:cType,mode:document.getElementById('t-mode').value,ccid:document.getElementById('t-cc').value,narr:document.getElementById('t-narr').value});
-  save();document.getElementById('t-amt').value='';document.getElementById('t-narr').value='';document.getElementById('t-cc').value='';
+  save();document.getElementById('t-amt').value='';document.getElementById('t-amt-words').textContent='';document.getElementById('t-narr').value='';document.getElementById('t-cc').value='';
   document.getElementById('qa-party').classList.remove('open');document.getElementById('qa-cc').classList.remove('open');document.getElementById('qa-mode').classList.remove('open');
   renderTxns();backLand();
 });
+document.getElementById('t-amt').addEventListener('input',function(){document.getElementById('t-amt-words').textContent=amountWords(this.value);});
+document.getElementById('e-amt').addEventListener('input',function(){document.getElementById('e-amt-words').textContent=amountWords(this.value);});
 // ---- Bulk transaction import (Excel/CSV) ----
 function impPad(n){return ('0'+n).slice(-2);}
 function parseImportDate(v){
