@@ -83,7 +83,7 @@ td{padding:7px 8px;border-bottom:1px solid #f5f5f5;vertical-align:middle}
 .int-toggle{display:flex;align-items:center;gap:8px;font-size:13px;padding:6px 0}
 .int-toggle input[type=checkbox]{width:16px;height:16px;cursor:pointer}
 #d-parties,#txn-list{overflow-x:auto;-webkit-overflow-scrolling:touch}
-.hide-date .c-date,.hide-type .c-type,.hide-mode .c-mode,.hide-cc .c-cc,.hide-narr .c-narr,.hide-days .c-days,.hide-int .c-int,.hide-ipd .c-ipd,.hide-act .c-act{display:none}
+.hide-date .c-date,.hide-type .c-type,.hide-mode .c-mode,.hide-cc .c-cc,.hide-narr .c-narr,.hide-days .c-days,.hide-int .c-int,.hide-ipd .c-ipd,.hide-appr .c-appr,.hide-act .c-act{display:none}
 @media(max-width:600px){
   body{padding:.5rem}
   .app{padding:1rem;border-radius:8px}
@@ -290,6 +290,7 @@ var LEDGER=fbDB.collection('ledger').doc('main');
         <label class="int-toggle" style="padding:0"><input type="checkbox" id="cb-days" checked> Days held</label>
         <label class="int-toggle" style="padding:0"><input type="checkbox" id="cb-int" checked> Interest</label>
         <label class="int-toggle" style="padding:0"><input type="checkbox" id="cb-ipd" checked> Interest paid date</label>
+        <label class="int-toggle" style="padding:0"><input type="checkbox" id="cb-appr" checked> Approval</label>
         <label class="int-toggle" style="padding:0"><input type="checkbox" id="cb-act" checked> Actions</label>
       </div>
     </div>
@@ -404,6 +405,18 @@ function save(){LEDGER.set({parties:DB.parties,cc:DB.cc,modes:DB.modes,txns:DB.t
 // Keep each shared (view-only) party doc in sync with the latest data + access grant
 function writeShare(s,p){var txns=DB.txns.filter(function(t){return t.pid===p.id;});var ip={};var pre=p.id+'|';Object.keys(DB.intpay||{}).forEach(function(k){if(k.indexOf(pre)===0)ip[k]=DB.intpay[k];});return fbDB.collection('shares').doc(s.token).set({pid:p.id,party:p,txns:txns,intpay:ip,grantUntil:s.grantUntil||0,period:s.period||{mode:'custom'}});}
 function syncShares(){(DB.shares||[]).forEach(function(s){var p=DB.parties.find(function(x){return x.id===s.pid;});if(p&&s.active!==false)writeShare(s,p);else fbDB.collection('shares').doc(s.token).delete().catch(function(){});});}
+// Owner: subscribe to each share's approvals doc so the ledger shows the party's sign-offs/comments
+var APPROVALS={},apprSubs={};
+function reconcileApprSubs(){
+  var active={};(DB.shares||[]).forEach(function(s){if(s.active!==false)active[s.token]=1;});
+  Object.keys(apprSubs).forEach(function(tok){if(!active[tok]){apprSubs[tok]();delete apprSubs[tok];}});
+  Object.keys(active).forEach(function(tok){
+    if(apprSubs[tok])return;
+    apprSubs[tok]=fbDB.collection('approvals').doc(tok).onSnapshot(function(d){
+      var items=(d.exists&&d.data().items)||{};Object.keys(items).forEach(function(tid){APPROVALS[tid]=items[tid];});refreshUI();
+    },function(){});
+  });
+}
 function slug(s){return (s||'').toLowerCase().replace(/[^a-z0-9]+/g,'').slice(0,12)||'party';}
 function shortId(){var c='abcdefghijklmnopqrstuvwxyz0123456789',a=new Uint8Array(8),r='';if(window.crypto&&crypto.getRandomValues)crypto.getRandomValues(a);else for(var i=0;i<8;i++)a[i]=Math.floor(Math.random()*256);for(var i=0;i<8;i++)r+=c.charAt(a[i]%36);return r;}
 function nameExists(list,name,exceptId){var n=(name||'').trim().toLowerCase();return list.some(function(x){return (x.name||'').trim().toLowerCase()===n&&x.id!==exceptId;});}
@@ -496,7 +509,7 @@ function runEngine(party,allTxns,fromDate,toDate){
     evTxns.forEach(function(t){
       var isRec=t.tt==='receipt';
       balance=r2(balance+(isRec?parseFloat(t.amt):-parseFloat(t.amt)));
-      ledger.push({rowType:t.tt,date:ev,label:fd(ev),debit:isRec?0:parseFloat(t.amt),credit:isRec?parseFloat(t.amt):0,days:'',segInt:'',balance:balance,narr:t.narr,mode:t.mode,ccid:t.ccid,id:t.id});
+      ledger.push({rowType:t.tt,date:ev,label:fd(ev),debit:isRec?0:parseFloat(t.amt),credit:isRec?parseFloat(t.amt):0,days:'',segInt:'',balance:balance,narr:t.narr,mode:t.mode,ccid:t.ccid,id:t.id,appr:t.appr});
     });
     if(jvOn&&isPost&&monthAccrual>0.001){
       var posted=r2(monthAccrual);
@@ -729,6 +742,7 @@ function loadPartyRep(){
   if(!document.getElementById('cb-days').checked)hideCls.push('hide-days');
   if(!document.getElementById('cb-int').checked)hideCls.push('hide-int');
   if(!document.getElementById('cb-ipd').checked)hideCls.push('hide-ipd');
+  if(!document.getElementById('cb-appr').checked)hideCls.push('hide-appr');
   if(!document.getElementById('cb-act').checked)hideCls.push('hide-act');
   var parties=sel.map(function(id){return DB.parties.find(function(p){return p.id===id;});}).filter(Boolean);
   body.innerHTML='';
@@ -757,7 +771,7 @@ function appendPartyLedgerCard(body,party,from,to,showMg,hideCls){
   var wrap=document.createElement('div');wrap.style.overflowX='auto';
   var tbl=document.createElement('table');tbl.style.tableLayout='auto';
   tbl.className=hideCls.join(' ');
-  tbl.innerHTML='<thead><tr><th class="c-date">Date</th><th class="c-type">Type</th><th class="c-mode">Mode</th><th class="c-cc">Cost center</th><th class="c-narr">Narration</th><th class="num">Payment (Dr)</th><th class="num">Receipt (Cr)</th><th class="num">Running balance</th><th class="num c-days">Days held</th><th class="num c-int">Interest (₹)</th><th class="c-ipd">Interest paid date</th><th class="c-act">Actions</th></tr></thead>';
+  tbl.innerHTML='<thead><tr><th class="c-date">Date</th><th class="c-type">Type</th><th class="c-mode">Mode</th><th class="c-cc">Cost center</th><th class="c-narr">Narration</th><th class="num">Payment (Dr)</th><th class="num">Receipt (Cr)</th><th class="num">Running balance</th><th class="num c-days">Days held</th><th class="num c-int">Interest (₹)</th><th class="c-ipd">Interest paid date</th><th class="c-appr">Approval</th><th class="c-act">Actions</th></tr></thead>';
   var tbody=document.createElement('tbody');
   res.ledger.forEach(function(row){
     if(row.rowType==='segment')return;
@@ -775,6 +789,11 @@ function appendPartyLedgerCard(body,party,from,to,showMg,hideCls){
     var narrCell=isSI?row.label:(row.narr||'');
     var balCell=isSI?'':(fa(Math.abs(row.balance))+' '+(row.balance>=0?'Cr':'Dr'));
     var intCell=isSI?fa(row.monthTotal):(row.accrInt?fa(row.accrInt):'');
+    var apprCell='';
+    if(row.rowType==='payment'||row.rowType==='receipt'){
+      var apr=APPROVALS[row.id],ok=(row.appr!=='pending')||(apr&&apr.ok);
+      apprCell=ok?('<span class="tag tag-r">Approved ✓</span>'+(apr&&apr.c?'<div style="font-size:10px;color:#888">'+escapeHtml(apr.c)+'</div>':'')):'<span class="tag tag-p">Pending</span>';
+    }
     tr.innerHTML='<td class="c-date" style="white-space:nowrap">'+fd(row.date)+'</td><td class="c-type">'+typeCell+'</td>'+
       '<td class="c-mode">'+((row.rowType==='payment'||row.rowType==='receipt')&&row.mode?'<span class="tag">'+row.mode+'</span>':'')+'</td>'+
       '<td class="c-cc">'+(!isSI&&cc?'<span class="tag">'+cc.name+'</span>':'')+'</td>'+
@@ -785,6 +804,7 @@ function appendPartyLedgerCard(body,party,from,to,showMg,hideCls){
       '<td class="num c-days" style="color:#999">'+(!isSI&&row.accrDays?row.accrDays+' d':'')+'</td>'+
       '<td class="num c-int" style="color:#2563eb">'+intCell+'</td>'+
       '<td class="c-ipd"></td>'+
+      '<td class="c-appr">'+apprCell+'</td>'+
       '<td class="c-act"></td>';
     if(isSI){
       var ipdTd=tr.querySelector('td.c-ipd');var key=party.id+'|'+row.ym;
@@ -812,6 +832,7 @@ function appendPartyLedgerCard(body,party,from,to,showMg,hideCls){
     '<td class="num c-days"></td>'+
     '<td class="num c-int" style="color:#2563eb;font-weight:600">'+fa(res.totalInterest)+'</td>'+
     '<td class="c-ipd"></td>'+
+    '<td class="c-appr"></td>'+
     '<td class="c-act"></td>';
   tbody.appendChild(foot);tbl.appendChild(tbody);wrap.appendChild(tbl);card.appendChild(wrap);body.appendChild(card);
 }
@@ -955,7 +976,7 @@ document.getElementById('qa-cc-input').addEventListener('keydown',function(e){if
 document.getElementById('b-savetxn').addEventListener('click',function(){
   var pid=document.getElementById('t-party').value,date=document.getElementById('t-date').value,amt=document.getElementById('t-amt').value;
   if(!pid||!date||!amt)return;
-  DB.txns.push({id:Date.now().toString(),pid:pid,date:date,amt:parseFloat(amt),tt:cType,mode:document.getElementById('t-mode').value,ccid:document.getElementById('t-cc').value,narr:document.getElementById('t-narr').value});
+  DB.txns.push({id:Date.now().toString(),pid:pid,date:date,amt:parseFloat(amt),tt:cType,mode:document.getElementById('t-mode').value,ccid:document.getElementById('t-cc').value,narr:document.getElementById('t-narr').value,appr:'pending'});
   save();document.getElementById('t-amt').value='';document.getElementById('t-amt-words').textContent='';document.getElementById('t-narr').value='';document.getElementById('t-cc').value='';
   document.getElementById('qa-party').classList.remove('open');document.getElementById('qa-cc').classList.remove('open');document.getElementById('qa-mode').classList.remove('open');
   renderTxns();backLand();
@@ -1011,7 +1032,7 @@ function processImportRows(rows){
     else modeName=(DB.modes[0]?DB.modes[0].name:'Bank');
     var ccName=sget(row,'cost center'),ccid='';
     if(ccName){var ck=ccName.toLowerCase();if(ccMap[ck])ccid=ccMap[ck];else{ccid=String(Date.now())+'_c'+newCCs.length;newCCs.push({id:ccid,name:ccName,desc:''});ccMap[ck]=ccid;}}
-    added.push({id:String(Date.now())+'_'+(i++),pid:party.id,date:date,amt:amt,tt:tt,mode:modeName,ccid:ccid,narr:sget(row,'narration')});
+    added.push({id:String(Date.now())+'_'+(i++),pid:party.id,date:date,amt:amt,tt:tt,mode:modeName,ccid:ccid,narr:sget(row,'narration'),appr:'pending'});
   });
   if(!added.length){alert('No valid rows found to import.'+(errors.length?'\n\n'+errors.slice(0,15).join('\n'):''));return;}
   var msg='Import '+added.length+' transaction(s)?';
@@ -1039,7 +1060,7 @@ document.getElementById('r-preview').addEventListener('click',loadPartyRep);
 document.getElementById('c-preview').addEventListener('click',loadCCRep);
 document.getElementById('r-from').addEventListener('change',loadPartyRep);
 document.getElementById('r-to').addEventListener('change',loadPartyRep);
-['cb-date','cb-type','cb-mode','cb-cc','cb-narr','cb-days','cb-int','cb-ipd','cb-act'].forEach(function(id){document.getElementById(id).addEventListener('change',loadPartyRep);});
+['cb-date','cb-type','cb-mode','cb-cc','cb-narr','cb-days','cb-int','cb-ipd','cb-appr','cb-act'].forEach(function(id){document.getElementById(id).addEventListener('change',loadPartyRep);});
 document.getElementById('r-cc-from').addEventListener('change',loadCCRep);
 document.getElementById('r-cc-to').addEventListener('change',loadCCRep);
 
@@ -1132,6 +1153,7 @@ function startApp(user){
     if(doc.exists){var d=doc.data();DB={parties:d.parties||[],cc:d.cc||[],modes:d.modes||[],txns:d.txns||[],shares:d.shares||[],intpay:d.intpay||{},notes:d.notes||[]};}
     else{DB={parties:[],cc:[],modes:DEFAULT_MODES.slice(),txns:[],shares:[],intpay:{},notes:[]};LEDGER.set(DB).catch(function(){});}
     if(!DB.modes||!DB.modes.length)DB.modes=DEFAULT_MODES.slice();
+    reconcileApprSubs();
     refreshUI();
   },function(err){console.error(err);alert('Cloud sync error: '+err.message+'\n(Check that your email is authorised in the Firestore rules.)');});
 }
@@ -1148,7 +1170,7 @@ else fbAuth.onAuthStateChanged(function(user){
   else{if(ledgerSub){ledgerSub();ledgerSub=null;}document.getElementById('app').style.display='none';setAuthMode('login');document.getElementById('auth-user').value='';document.getElementById('auth-pass').value='';document.getElementById('auth-pass2').value='';document.getElementById('auth-gate').style.display='flex';}
 });
 // ---- View-only shared ledger ----
-var VSHARE=null;
+var VSHARE=null,VTOKEN=null,VAPPR={};
 function initViewer(token){
   document.getElementById('auth-gate').style.display='none';
   document.getElementById('app').style.display='none';
@@ -1162,19 +1184,25 @@ function initViewer(token){
     var pr=VSHARE.period||{mode:'custom'};
     if(pr.mode&&pr.mode!=='custom'){var pd=periodDates(pr.mode);fe.value=pd.from;te.value=pd.to;fe.disabled=true;te.disabled=true;}
     else{fe.value=pr.from||((VSHARE.party&&VSHARE.party.opendate)||fom());te.value=pr.to||tod();var locked=!!(pr.from||pr.to);fe.disabled=locked;te.disabled=locked;}
-    renderViewer();
+    VTOKEN=token;
+    fbDB.collection('approvals').doc(token).get().then(function(ad){VAPPR=(ad.exists&&ad.data().items)||{};}).catch(function(){VAPPR={};}).then(function(){renderViewer();});
   }).catch(function(e){var msg=(e&&e.code==='permission-denied')?'This shared ledger is open only during the first 5 days of each month, or with temporary access from the owner. Please ask the owner to grant you access.':'Could not load: '+(e&&e.message||e);document.getElementById('v-body').innerHTML='<div class="card"><div class="empty">'+msg+'</div></div>';});
 }
 function viewerRes(){return runEngine(VSHARE.party,VSHARE.txns||[],document.getElementById('v-from').value,document.getElementById('v-to').value);}
 function renderViewer(){
   if(!VSHARE)return;var res=viewerRes();var isdr=res.closingBalance>=0;var body=document.getElementById('v-body');
   var h='<div class="mg"><div class="mc"><div class="ml">Closing balance</div><div class="mv" style="color:'+(isdr?'#16a34a':'#dc2626')+'">'+fa(Math.abs(res.closingBalance))+' '+(isdr?'Cr':'Dr')+'</div></div><div class="mc"><div class="ml">Total interest posted</div><div class="mv" style="color:#2563eb">'+fa(res.totalInterest)+'</div></div></div>';
-  h+='<div class="card"><div style="overflow-x:auto"><table style="table-layout:auto"><thead><tr><th>Date</th><th>Type</th><th>Mode</th><th>Narration</th><th class="num">Payment (Dr)</th><th class="num">Receipt (Cr)</th><th class="num">Running balance</th><th class="num">Days held</th><th class="num">Interest (₹)</th><th>Interest paid date</th></tr></thead><tbody>';
+  h+='<div class="card"><div style="overflow-x:auto"><table style="table-layout:auto"><thead><tr><th>Date</th><th>Type</th><th>Mode</th><th>Narration</th><th class="num">Payment (Dr)</th><th class="num">Receipt (Cr)</th><th class="num">Running balance</th><th class="num">Days held</th><th class="num">Interest (₹)</th><th>Interest paid date</th><th>Approval</th></tr></thead><tbody>';
   res.ledger.forEach(function(r){if(r.rowType==='segment')return;
     var isSI=r.rowType==='simpleint';
     var tcls=(r.rowType==='interest'||isSI)?' class="tr-int"':'';
     var typeCell=r.rowType==='receipt'?'<span class="tag tag-r">Receipt</span>':r.rowType==='payment'?'<span class="tag tag-p">Payment</span>':r.rowType==='interest'?'<span class="tag tag-i">Interest posted</span>':isSI?'<span class="tag tag-i">Interest</span>':r.rowType==='opening'?'<span class="tag">Opening</span>':'';
     var ipd=isSI?paidDate(VSHARE.party.id,r.ym):'';
+    var apprCell='';
+    if(r.rowType==='payment'||r.rowType==='receipt'){
+      var apr=VAPPR[r.id],ok=(r.appr!=='pending')||(apr&&apr.ok);
+      apprCell=ok?('<span class="tag tag-r">Approved ✓</span>'+(apr&&apr.c?'<div style="font-size:10px;color:#888">'+escapeHtml(apr.c)+'</div>':'')):'<div style="display:flex;gap:4px;align-items:center"><input class="v-cmt" data-id="'+r.id+'" placeholder="Comment" style="width:90px;padding:3px 5px;border:1px solid #e0e0e0;border-radius:4px;font-size:11px;font-family:inherit"><button class="btn btn-sm v-appr" data-id="'+r.id+'">Approve</button></div>';
+    }
     h+='<tr'+tcls+'><td style="white-space:nowrap">'+fd(r.date)+'</td><td>'+typeCell+'</td>'+
       '<td>'+((r.rowType==='payment'||r.rowType==='receipt')&&r.mode?'<span class="tag">'+r.mode+'</span>':'')+'</td>'+
       '<td style="font-size:11px;color:#888">'+(isSI?r.label:(r.narr||''))+'</td>'+
@@ -1183,11 +1211,18 @@ function renderViewer(){
       '<td class="num" style="font-weight:500;color:'+(r.balance>=0?'#16a34a':'#dc2626')+'">'+(isSI?'':(fa(Math.abs(r.balance))+' '+(r.balance>=0?'Cr':'Dr')))+'</td>'+
       '<td class="num" style="color:#999">'+(!isSI&&r.accrDays?r.accrDays+' d':'')+'</td>'+
       '<td class="num" style="color:#2563eb">'+(isSI?fa(r.monthTotal):(r.accrInt?fa(r.accrInt):''))+'</td>'+
-      '<td>'+(ipd?fd(ipd):'')+'</td></tr>';
+      '<td>'+(ipd?fd(ipd):'')+'</td><td>'+apprCell+'</td></tr>';
   });
-  h+='<tr class="tr-foot"><td colspan="6" style="text-align:right;font-weight:600">Closing balance / Total interest</td><td class="num" style="font-weight:600">'+fa(Math.abs(res.closingBalance))+' '+(isdr?'Cr':'Dr')+'</td><td></td><td class="num" style="color:#2563eb;font-weight:600">'+fa(res.totalInterest)+'</td><td></td></tr>';
+  h+='<tr class="tr-foot"><td colspan="6" style="text-align:right;font-weight:600">Closing balance / Total interest</td><td class="num" style="font-weight:600">'+fa(Math.abs(res.closingBalance))+' '+(isdr?'Cr':'Dr')+'</td><td></td><td class="num" style="color:#2563eb;font-weight:600">'+fa(res.totalInterest)+'</td><td></td><td></td></tr>';
   h+='</tbody></table></div></div>';
   body.innerHTML=h;
+  Array.prototype.forEach.call(body.querySelectorAll('.v-appr'),function(btn){btn.addEventListener('click',function(){var tid=btn.getAttribute('data-id');var ci=body.querySelector('.v-cmt[data-id="'+tid+'"]');approveTxn(tid,ci?ci.value:'');});});
+}
+function approveTxn(tid,comment){
+  if(!VTOKEN)return;
+  var rec={ok:true,c:comment||'',at:new Date().toISOString()};
+  var payload={items:{}};payload.items[tid]=rec;
+  fbDB.collection('approvals').doc(VTOKEN).set(payload,{merge:true}).then(function(){VAPPR[tid]=rec;renderViewer();}).catch(function(e){alert('Could not save approval: '+(e&&e.message||e));});
 }
 document.getElementById('v-from').addEventListener('change',renderViewer);
 document.getElementById('v-to').addEventListener('change',renderViewer);
