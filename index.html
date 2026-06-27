@@ -356,6 +356,20 @@ var LEDGER=fbDB.collection('ledger').doc('main');
       <div style="font-size:12px">Status: <b id="share-active-status"></b></div>
       <button class="btn btn-sm" id="share-toggle-active">Make inactive</button>
     </div>
+    <div style="border-top:1px solid #eee;padding-top:10px;margin-bottom:10px">
+      <div style="font-size:11px;color:#888;margin-bottom:4px">Period the viewer can see</div>
+      <select id="share-period" class="fsel" style="width:100%">
+        <option value="custom">Custom dates</option>
+        <option value="cfy">Current financial year</option>
+        <option value="lfy">Last financial year</option>
+        <option value="cm">Current month</option>
+      </select>
+      <div id="share-period-custom" style="display:flex;gap:8px;margin-top:8px">
+        <div class="fg" style="flex:1;margin-bottom:0"><label style="font-size:11px">From</label><input id="share-from" type="date"></div>
+        <div class="fg" style="flex:1;margin-bottom:0"><label style="font-size:11px">To</label><input id="share-to" type="date"></div>
+      </div>
+      <p style="font-size:11px;color:#888;margin-top:6px">Opening balance still includes everything before this period.</p>
+    </div>
     <div style="border-top:1px solid #eee;padding-top:10px">
       <div style="font-size:11px;color:#888;margin-bottom:4px">Access window</div>
       <div id="share-status" style="font-size:12px;margin-bottom:8px"></div>
@@ -388,7 +402,7 @@ var SHARE=new URLSearchParams(location.search).get('share');
 
 function save(){LEDGER.set({parties:DB.parties,cc:DB.cc,modes:DB.modes,txns:DB.txns,shares:DB.shares||[],intpay:DB.intpay||{},notes:DB.notes||[]}).then(syncShares).catch(function(e){console.error('Save failed',e);alert('Could not save to cloud: '+e.message);});}
 // Keep each shared (view-only) party doc in sync with the latest data + access grant
-function writeShare(s,p){var txns=DB.txns.filter(function(t){return t.pid===p.id;});var ip={};var pre=p.id+'|';Object.keys(DB.intpay||{}).forEach(function(k){if(k.indexOf(pre)===0)ip[k]=DB.intpay[k];});return fbDB.collection('shares').doc(s.token).set({pid:p.id,party:p,txns:txns,intpay:ip,grantUntil:s.grantUntil||0});}
+function writeShare(s,p){var txns=DB.txns.filter(function(t){return t.pid===p.id;});var ip={};var pre=p.id+'|';Object.keys(DB.intpay||{}).forEach(function(k){if(k.indexOf(pre)===0)ip[k]=DB.intpay[k];});return fbDB.collection('shares').doc(s.token).set({pid:p.id,party:p,txns:txns,intpay:ip,grantUntil:s.grantUntil||0,period:s.period||{mode:'custom'}});}
 function syncShares(){(DB.shares||[]).forEach(function(s){var p=DB.parties.find(function(x){return x.id===s.pid;});if(p&&s.active!==false)writeShare(s,p);else fbDB.collection('shares').doc(s.token).delete().catch(function(){});});}
 function slug(s){return (s||'').toLowerCase().replace(/[^a-z0-9]+/g,'').slice(0,12)||'party';}
 function shortId(){var c='abcdefghijklmnopqrstuvwxyz0123456789',a=new Uint8Array(8),r='';if(window.crypto&&crypto.getRandomValues)crypto.getRandomValues(a);else for(var i=0;i<8;i++)a[i]=Math.floor(Math.random()*256);for(var i=0;i<8;i++)r+=c.charAt(a[i]%36);return r;}
@@ -413,6 +427,11 @@ function amountWords(val){
 function diffDays(a,b){return Math.round((new Date(b)-new Date(a))/(1000*60*60*24));}
 function lastDayOfMonth(iso){var p=iso.split('-');return new Date(Date.UTC(+p[0],+p[1],0)).toISOString().split('T')[0];}
 function monthName(iso){var m=['January','February','March','April','May','June','July','August','September','October','November','December'];var p=iso.split('-');return m[(+p[1])-1]+' '+p[0];}
+function periodDates(mode){var d=new Date(),y=d.getFullYear(),m=d.getMonth()+1;var sy=(m>=4)?y:y-1;
+  if(mode==='cfy')return{from:sy+'-04-01',to:(sy+1)+'-03-31',label:'Current FY '+sy+'-'+(sy+1)};
+  if(mode==='lfy')return{from:(sy-1)+'-04-01',to:sy+'-03-31',label:'Last FY '+(sy-1)+'-'+sy};
+  if(mode==='cm'){var mm=('0'+m).slice(-2);return{from:y+'-'+mm+'-01',to:lastDayOfMonth(y+'-'+mm+'-01'),label:'Current month'};}
+  return null;}
 function paidDate(pid,ym){var m=(typeof VSHARE!=='undefined'&&VSHARE&&VSHARE.intpay)?VSHARE.intpay:(DB.intpay||{});return m[pid+'|'+ym]||'';}
 function r2(n){return Math.round(n*100)/100;}
 
@@ -1140,7 +1159,9 @@ function initViewer(token){
     VSHARE=d.data();
     document.getElementById('v-title').textContent=(VSHARE.party&&VSHARE.party.name||'Party')+' — Ledger';
     var fe=document.getElementById('v-from'),te=document.getElementById('v-to');
-    fe.value=(VSHARE.party&&VSHARE.party.opendate)||fom();te.value=tod();
+    var pr=VSHARE.period||{mode:'custom'};
+    if(pr.mode&&pr.mode!=='custom'){var pd=periodDates(pr.mode);fe.value=pd.from;te.value=pd.to;fe.disabled=true;te.disabled=true;}
+    else{fe.value=pr.from||((VSHARE.party&&VSHARE.party.opendate)||fom());te.value=pr.to||tod();var locked=!!(pr.from||pr.to);fe.disabled=locked;te.disabled=locked;}
     renderViewer();
   }).catch(function(e){var msg=(e&&e.code==='permission-denied')?'This shared ledger is open only during the first 5 days of each month, or with temporary access from the owner. Please ask the owner to grant you access.':'Could not load: '+(e&&e.message||e);document.getElementById('v-body').innerHTML='<div class="card"><div class="empty">'+msg+'</div></div>';});
 }
@@ -1192,8 +1213,20 @@ function openShareModal(p){
   shareModalPid=p.id;
   document.getElementById('share-title').textContent="Share "+p.name+"'s ledger";
   document.getElementById('share-url').value=location.origin+location.pathname+'?share='+s.token;
+  var pr=s.period||{mode:'custom'};
+  document.getElementById('share-period').value=pr.mode||'custom';
+  document.getElementById('share-from').value=pr.from||'';
+  document.getElementById('share-to').value=pr.to||'';
+  document.getElementById('share-period-custom').style.display=(pr.mode==='custom'||!pr.mode)?'flex':'none';
   updateShareStatus();
   document.getElementById('share-modal').style.display='flex';
+}
+function saveSharePeriod(){
+  var s=(DB.shares||[]).find(function(x){return x.pid===shareModalPid;});if(!s)return;
+  var mode=document.getElementById('share-period').value;
+  document.getElementById('share-period-custom').style.display=mode==='custom'?'flex':'none';
+  s.period={mode:mode,from:document.getElementById('share-from').value,to:document.getElementById('share-to').value};
+  save();
 }
 function toggleShareActive(){
   var s=(DB.shares||[]).find(function(x){return x.pid===shareModalPid;});if(!s)return;
@@ -1208,6 +1241,9 @@ document.getElementById('share-copy').addEventListener('click',function(){var i=
 document.getElementById('share-g24').addEventListener('click',function(){grantAccess(24);});
 document.getElementById('share-g48').addEventListener('click',function(){grantAccess(48);});
 document.getElementById('share-toggle-active').addEventListener('click',toggleShareActive);
+document.getElementById('share-period').addEventListener('change',saveSharePeriod);
+document.getElementById('share-from').addEventListener('change',saveSharePeriod);
+document.getElementById('share-to').addEventListener('change',saveSharePeriod);
 document.getElementById('share-revoke').addEventListener('click',function(){if(!shareModalPid)return;var s=(DB.shares||[]).find(function(x){return x.pid===shareModalPid;});if(s){fbDB.collection('shares').doc(s.token).delete().catch(function(){});DB.shares=DB.shares.filter(function(x){return x.pid!==shareModalPid;});save();}document.getElementById('share-modal').style.display='none';alert('Link revoked — it will no longer open.');});
 document.getElementById('auth-btn').addEventListener('click',submitAuth);
 document.getElementById('auth-pass').addEventListener('keydown',function(e){if(e.key==='Enter')submitAuth();});
