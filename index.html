@@ -472,10 +472,13 @@ function runEngine(party,allTxns,fromDate,toDate){
   // full history (for an accurate carried-forward balance + interest accrual) but
   // only DISPLAY rows on/after this window start.
   var winFrom=(fromDate&&fromDate>startDate)?fromDate:null;
+  // Interest is only accrued/posted up to today; never into the future even if To is later.
+  var capIso=tod();
   var txns=allTxns.filter(function(t){return t.pid===party.id&&t.date>=startDate&&t.date<=toDate;}).sort(function(a,b){return a.date.localeCompare(b.date);});
   var dateMap={};
   dateMap[startDate]=1;dateMap[toDate]=1;
   if(winFrom)dateMap[winFrom]=1;
+  if(capIso>=startDate&&capIso<=toDate)dateMap[capIso]=1;
   txns.forEach(function(t){dateMap[t.date]=1;});
   var cur=new Date(startDate);
   while(true){
@@ -498,7 +501,7 @@ function runEngine(party,allTxns,fromDate,toDate){
     var isPost=isMe&&(!postMonths||postMonths.indexOf(+ev.split('-')[1])>=0);
     var evTxns=txns.filter(function(t){return t.date===ev;});
     if(jvOn&&days>0&&Math.abs(balance)>0.001){
-      var segInt=r2(Math.abs(balance)*dailyRate*days);
+      var segInt=(ev<=capIso)?r2(Math.abs(balance)*dailyRate*days):0;
       monthAccrual+=segInt;
       ledger.push({rowType:'segment',date:ev,segFrom:prevDate,label:fd(prevDate)+' → '+fd(ev),debit:'',credit:'',days:days,segInt:segInt,balance:balance});
     }
@@ -511,7 +514,7 @@ function runEngine(party,allTxns,fromDate,toDate){
       balance=r2(balance+(isRec?parseFloat(t.amt):-parseFloat(t.amt)));
       ledger.push({rowType:t.tt,date:ev,label:fd(ev),debit:isRec?0:parseFloat(t.amt),credit:isRec?parseFloat(t.amt):0,days:'',segInt:'',balance:balance,narr:t.narr,mode:t.mode,ccid:t.ccid,id:t.id,appr:t.appr});
     });
-    if(jvOn&&isPost&&monthAccrual>0.001){
+    if(jvOn&&isPost&&monthAccrual>0.001&&ev<=capIso){
       var posted=r2(monthAccrual);
       totalInt=r2(totalInt+posted);
       if(isCompound){
