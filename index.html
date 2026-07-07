@@ -170,7 +170,7 @@ var LEDGER=fbDB.collection('ledger').doc('main');
     <div class="grid4">
       <div class="fg"><label>Annual interest rate (%)</label><input id="p-rate" type="number" step="0.01" value="24"></div>
       <div class="fg"><label>Interest type</label><select id="p-itype"><option>Simple</option><option selected>Compound</option></select></div>
-      <div class="fg"><label>Opening balance (₹)</label><input id="p-open" type="number" placeholder="0"></div>
+      <div class="fg"><label>Opening balance (₹)</label><input id="p-open" type="number" placeholder="0"><div id="p-open-words" style="font-size:11px;color:#2563eb;margin-top:3px;min-height:14px"></div></div>
       <div class="fg"><label>Opening type</label><select id="p-otype"><option>Dr (they owe me)</option><option>Cr (I owe them)</option></select></div>
     </div>
     <div class="grid2">
@@ -916,7 +916,7 @@ function editParty(id){
   document.getElementById('pf-title').textContent='Edit party';
   document.getElementById('p-name').value=p.name;document.getElementById('p-type').value=p.type;document.getElementById('p-phone').value=p.phone||'';
   document.getElementById('p-rate').value=p.rate||24;document.getElementById('p-itype').value=p.itype||'Compound';
-  document.getElementById('p-open').value=p.open||'';document.getElementById('p-otype').value=p.otype||'Dr (they owe me)';
+  document.getElementById('p-open').value=p.open||'';document.getElementById('p-open-words').textContent=amountWords(p.open);document.getElementById('p-otype').value=p.otype||'Dr (they owe me)';
   document.getElementById('p-opendate').value=p.opendate||tod();document.getElementById('p-notes').value=p.notes||'';
   document.getElementById('p-intjv').checked=(p.intjv!==false);document.getElementById('p-jvfreq').value=p.jvfreq||'Monthly';toggleJvFreq();
   document.getElementById('party-form').style.display='block';document.getElementById('party-form').scrollIntoView({behavior:'smooth'});
@@ -930,7 +930,7 @@ function openEdit(id){var t=DB.txns.find(function(x){return x.id===id;});if(!t)r
 function closeEdit(){document.getElementById('edit-modal').style.display='none';eTid=null;}
 function toggleJvFreq(){document.getElementById('p-jvfreq-wrap').style.display=document.getElementById('p-intjv').checked?'':'none';}
 
-document.getElementById('b-addparty').addEventListener('click',function(){ePid=null;document.getElementById('pf-title').textContent='Add party';['p-name','p-phone','p-open','p-notes'].forEach(function(id){document.getElementById(id).value='';});document.getElementById('p-rate').value='24';document.getElementById('p-type').value='Individual';document.getElementById('p-itype').value='Compound';document.getElementById('p-otype').value='Dr (they owe me)';document.getElementById('p-opendate').value=tod();document.getElementById('p-intjv').checked=true;document.getElementById('p-jvfreq').value='Monthly';toggleJvFreq();document.getElementById('party-form').style.display='block';});
+document.getElementById('b-addparty').addEventListener('click',function(){ePid=null;document.getElementById('pf-title').textContent='Add party';['p-name','p-phone','p-open','p-notes'].forEach(function(id){document.getElementById(id).value='';});document.getElementById('p-open-words').textContent='';document.getElementById('p-rate').value='24';document.getElementById('p-type').value='Individual';document.getElementById('p-itype').value='Compound';document.getElementById('p-otype').value='Dr (they owe me)';document.getElementById('p-opendate').value=tod();document.getElementById('p-intjv').checked=true;document.getElementById('p-jvfreq').value='Monthly';toggleJvFreq();document.getElementById('party-form').style.display='block';});
 document.getElementById('p-intjv').addEventListener('change',toggleJvFreq);
 document.getElementById('b-cancelparty').addEventListener('click',function(){document.getElementById('party-form').style.display='none';ePid=null;});
 document.getElementById('b-saveparty').addEventListener('click',function(){
@@ -986,6 +986,7 @@ document.getElementById('b-savetxn').addEventListener('click',function(){
 });
 document.getElementById('t-amt').addEventListener('input',function(){document.getElementById('t-amt-words').textContent=amountWords(this.value);});
 document.getElementById('e-amt').addEventListener('input',function(){document.getElementById('e-amt-words').textContent=amountWords(this.value);});
+document.getElementById('p-open').addEventListener('input',function(){document.getElementById('p-open-words').textContent=amountWords(this.value);});
 // ---- Bulk transaction import (Excel/CSV) ----
 function impPad(n){return ('0'+n).slice(-2);}
 function parseImportDate(v){
