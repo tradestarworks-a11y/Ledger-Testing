@@ -177,7 +177,7 @@ var LEDGER=fbDB.collection('ledger').doc('main');
       <div class="fg"><label>Opening date</label><input id="p-opendate" type="date"></div>
       <div class="fg"><label>Notes</label><input id="p-notes" placeholder="Optional"></div>
     </div>
-    <div class="grid2">
+    <div class="grid2" id="p-jv-row">
       <div class="fg"><label>Interest JV</label>
         <label class="int-toggle" style="padding:8px 0"><input type="checkbox" id="p-intjv" checked> Apply interest JV to this party</label>
       </div>
@@ -928,15 +928,16 @@ function backLand(){document.getElementById('txn-land').style.display='block';do
 function startTxn(t){document.getElementById('txn-land').style.display='none';document.getElementById('txn-form').style.display='block';setTxnType(t);fillModeDD('t-mode','sel');if(!document.getElementById('t-date').value)document.getElementById('t-date').value=tod();}
 function openEdit(id){var t=DB.txns.find(function(x){return x.id===id;});if(!t)return;eTid=id;fillDD('e-party','sel');fillCCDD('e-cc','none');fillModeDD('e-mode','sel');document.getElementById('e-party').value=t.pid;document.getElementById('e-date').value=t.date;document.getElementById('e-amt').value=t.amt;document.getElementById('e-amt-words').textContent=amountWords(t.amt);document.getElementById('e-cc').value=t.ccid||'';document.getElementById('e-narr').value=t.narr||'';document.getElementById('e-type').value=t.tt;document.getElementById('e-mode').value=t.mode;document.getElementById('edit-modal').style.display='block';document.getElementById('edit-modal').scrollIntoView({behavior:'smooth'});}
 function closeEdit(){document.getElementById('edit-modal').style.display='none';eTid=null;}
-function toggleJvFreq(){document.getElementById('p-jvfreq-wrap').style.display=document.getElementById('p-intjv').checked?'':'none';}
+function toggleJvFreq(){var simple=document.getElementById('p-itype').value==='Simple';document.getElementById('p-jv-row').style.display=simple?'none':'';document.getElementById('p-jvfreq-wrap').style.display=document.getElementById('p-intjv').checked?'':'none';}
 
 document.getElementById('b-addparty').addEventListener('click',function(){ePid=null;document.getElementById('pf-title').textContent='Add party';['p-name','p-phone','p-open','p-notes'].forEach(function(id){document.getElementById(id).value='';});document.getElementById('p-open-words').textContent='';document.getElementById('p-rate').value='24';document.getElementById('p-type').value='Individual';document.getElementById('p-itype').value='Compound';document.getElementById('p-otype').value='Dr (they owe me)';document.getElementById('p-opendate').value=tod();document.getElementById('p-intjv').checked=true;document.getElementById('p-jvfreq').value='Monthly';toggleJvFreq();document.getElementById('party-form').style.display='block';});
 document.getElementById('p-intjv').addEventListener('change',toggleJvFreq);
+document.getElementById('p-itype').addEventListener('change',toggleJvFreq);
 document.getElementById('b-cancelparty').addEventListener('click',function(){document.getElementById('party-form').style.display='none';ePid=null;});
 document.getElementById('b-saveparty').addEventListener('click',function(){
   var name=document.getElementById('p-name').value.trim();if(!name)return;
   if(nameExists(DB.parties,name,ePid)){alert('A party named "'+name+'" already exists.');return;}
-  var p={id:ePid||Date.now().toString(),name:name,type:document.getElementById('p-type').value,phone:document.getElementById('p-phone').value,rate:document.getElementById('p-rate').value||24,itype:document.getElementById('p-itype').value,open:document.getElementById('p-open').value||0,otype:document.getElementById('p-otype').value,opendate:document.getElementById('p-opendate').value||tod(),notes:document.getElementById('p-notes').value,intjv:document.getElementById('p-intjv').checked,jvfreq:document.getElementById('p-jvfreq').value};
+  var p={id:ePid||Date.now().toString(),name:name,type:document.getElementById('p-type').value,phone:document.getElementById('p-phone').value,rate:document.getElementById('p-rate').value||24,itype:document.getElementById('p-itype').value,open:document.getElementById('p-open').value||0,otype:document.getElementById('p-otype').value,opendate:document.getElementById('p-opendate').value||tod(),notes:document.getElementById('p-notes').value,intjv:(document.getElementById('p-itype').value==='Simple')?true:document.getElementById('p-intjv').checked,jvfreq:(document.getElementById('p-itype').value==='Simple')?'Monthly':document.getElementById('p-jvfreq').value};
   if(ePid)DB.parties[DB.parties.findIndex(function(x){return x.id===ePid;})]=p;else DB.parties.push(p);
   save();document.getElementById('party-form').style.display='none';ePid=null;renderParties();renderDash();
 });
