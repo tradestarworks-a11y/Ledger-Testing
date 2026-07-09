@@ -417,6 +417,15 @@ function reconcileApprSubs(){
     },function(){});
   });
 }
+// Owner edited an entry -> wipe any prior viewer sign-off so it must be re-approved
+function resetApproval(tid,pid){
+  delete APPROVALS[tid];
+  (DB.shares||[]).forEach(function(s){
+    if(s.active===false||s.pid!==pid)return;
+    var upd={};upd['items.'+tid]=firebase.firestore.FieldValue.delete();
+    fbDB.collection('approvals').doc(s.token).update(upd).catch(function(){});
+  });
+}
 function slug(s){return (s||'').toLowerCase().replace(/[^a-z0-9]+/g,'').slice(0,12)||'party';}
 function shortId(){var c='abcdefghijklmnopqrstuvwxyz0123456789',a=new Uint8Array(8),r='';if(window.crypto&&crypto.getRandomValues)crypto.getRandomValues(a);else for(var i=0;i<8;i++)a[i]=Math.floor(Math.random()*256);for(var i=0;i<8;i++)r+=c.charAt(a[i]%36);return r;}
 function nameExists(list,name,exceptId){var n=(name||'').trim().toLowerCase();return list.some(function(x){return (x.name||'').trim().toLowerCase()===n&&x.id!==exceptId;});}
@@ -1054,7 +1063,9 @@ document.getElementById('b-closeedit').addEventListener('click',closeEdit);
 document.getElementById('b-canceledit').addEventListener('click',closeEdit);
 document.getElementById('b-saveedit').addEventListener('click',function(){
   if(!eTid)return;var idx=DB.txns.findIndex(function(t){return t.id===eTid;});if(idx<0)return;
-  DB.txns[idx]={id:eTid,pid:document.getElementById('e-party').value,date:document.getElementById('e-date').value,amt:parseFloat(document.getElementById('e-amt').value),tt:document.getElementById('e-type').value,mode:document.getElementById('e-mode').value,ccid:document.getElementById('e-cc').value,narr:document.getElementById('e-narr').value};
+  var newPid=document.getElementById('e-party').value;
+  DB.txns[idx]={id:eTid,pid:newPid,date:document.getElementById('e-date').value,amt:parseFloat(document.getElementById('e-amt').value),tt:document.getElementById('e-type').value,mode:document.getElementById('e-mode').value,ccid:document.getElementById('e-cc').value,narr:document.getElementById('e-narr').value,appr:'pending'};
+  resetApproval(eTid,DB.txns[idx].pid);
   save();closeEdit();renderTxns();renderDash();loadPartyRep();loadCCRep();
 });
 document.getElementById('rt-party').addEventListener('click',function(){document.getElementById('rt-party').className='rtab on';document.getElementById('rt-cc').className='rtab';document.getElementById('rep-party').style.display='block';document.getElementById('rep-cc').style.display='none';loadPartyRep();});
