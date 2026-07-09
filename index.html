@@ -279,7 +279,6 @@ var LEDGER=fbDB.collection('ledger').doc('main');
         <button class="btn btn-primary btn-sm" id="r-preview">Preview</button>
         <button class="btn btn-sm" id="b-pcsv" title="Export to Excel">📊 Excel</button>
         <button class="btn btn-sm" id="b-ppdf" title="Export to PDF">📄 PDF</button>
-        <button class="btn btn-sm" id="b-yearend" title="Delete an old financial year and carry its closing balance forward as next year's opening" style="margin-left:auto">🗓️ Year-end close</button>
       </div>
       <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:#666;margin-top:12px;align-items:center;border-top:1px solid #f0f0f0;padding-top:10px">
         <span style="color:#888">Columns:</span>
@@ -387,8 +386,8 @@ var LEDGER=fbDB.collection('ledger').doc('main');
 
 <div id="ye-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:9500;align-items:center;justify-content:center;padding:1rem">
   <div class="card" style="max-width:440px;width:100%">
-    <div class="row-hd" style="margin-bottom:1rem"><h2 style="font-size:14px">Year-end close</h2><button class="btn btn-sm" id="ye-close">✕</button></div>
-    <p style="font-size:12px;color:#888;margin-bottom:10px">Pick a completed financial year (Apr–Mar). For <b>every</b> party, its closing balance on 31 March becomes the opening balance of the next year, and all transactions on or before 31 March are permanently deleted.</p>
+    <div class="row-hd" style="margin-bottom:1rem"><h2 style="font-size:14px">Year-end close — <span id="ye-pname"></span></h2><button class="btn btn-sm" id="ye-close">✕</button></div>
+    <p style="font-size:12px;color:#888;margin-bottom:10px">Pick a completed financial year (Apr–Mar). This party's closing balance on 31 March becomes its opening balance for the next year, and its transactions on or before 31 March are permanently deleted. Only this party is affected, only when you press the button below.</p>
     <div class="fg"><label>Financial year to close</label><select id="ye-fy" class="fsel" style="width:100%"></select></div>
     <div id="ye-preview" style="font-size:12px;color:#555;max-height:200px;overflow:auto;border:1px solid #eee;border-radius:8px;padding:8px;margin-bottom:10px"></div>
     <label class="int-toggle" style="padding:6px 0;font-size:12px"><input type="checkbox" id="ye-confirm"> I understand this permanently deletes those transactions.</label>
@@ -803,6 +802,9 @@ function appendPartyLedgerCard(body,party,from,to,showMg,hideCls){
     save();loadPartyRep();renderTxns();renderDash();
   });
   headHd.appendChild(delBtn);
+  var yeBtn=document.createElement('button');yeBtn.className='btn btn-sm';yeBtn.style.cssText='margin-top:6px;margin-left:6px';yeBtn.textContent='🗓️ Year-end close';yeBtn.title='Carry this party\'s FY closing balance forward as next-year opening';
+  yeBtn.addEventListener('click',function(){openYearEnd(party.id);});
+  headHd.appendChild(yeBtn);
   var wrap=document.createElement('div');wrap.style.overflowX='auto';
   var tbl=document.createElement('table');tbl.style.tableLayout='auto';
   var cls=hideCls.slice();
@@ -1101,54 +1103,54 @@ setupAcct('r-party',getPartyItems);
 setupAcct('r-cc',getCCItems);
 document.getElementById('r-preview').addEventListener('click',loadPartyRep);
 document.getElementById('c-preview').addEventListener('click',loadCCRep);
-// ---- Year-end close: delete an old FY, carry closing balance forward as next opening ----
+// ---- Year-end close (per party): delete an old FY, carry that party's closing balance
+// forward as its next-year opening. Nothing changes until the owner presses the button.
+var yePid=null;
 function fyLabel(sy){return 'FY '+sy+'-'+String(sy+1).slice(-2);}
-function yeYears(){
+function yeYears(pid){
   var td=new Date(),ty=td.getFullYear(),tm=td.getMonth()+1;var curSy=(tm>=4)?ty:ty-1;
   var earliest=curSy-1;
-  (DB.txns||[]).forEach(function(t){if(!t.date)return;var yy=+t.date.slice(0,4),mm=+t.date.slice(5,7);var s=(mm>=4)?yy:yy-1;if(s<earliest)earliest=s;});
+  (DB.txns||[]).forEach(function(t){if(t.pid!==pid||!t.date)return;var yy=+t.date.slice(0,4),mm=+t.date.slice(5,7);var s=(mm>=4)?yy:yy-1;if(s<earliest)earliest=s;});
   var arr=[];for(var s=earliest;s<=curSy-1;s++)arr.push(s);return arr;
 }
-function yeParties(sy){var fyEnd=(sy+1)+'-03-31';return (DB.parties||[]).filter(function(p){return !(p.opendate&&p.opendate>fyEnd);});}
 function yePreview(sy){
+  var p=(DB.parties||[]).find(function(x){return x.id===yePid;});if(!p)return;
   var fyEnd=(sy+1)+'-03-31';
-  var delCount=(DB.txns||[]).filter(function(t){return t.date&&t.date<=fyEnd;}).length;
-  var lines='<div style="margin-bottom:6px"><b>'+delCount+'</b> transaction(s) up to 31 Mar '+(sy+1)+' will be deleted. New opening balances (from 1 Apr '+(sy+1)+'):</div>';
-  yeParties(sy).forEach(function(p){
-    var res=runEngine(p,(DB.txns||[]).filter(function(t){return t.pid===p.id;}),p.opendate||fyEnd,fyEnd);
-    var cb=res.closingBalance;
-    lines+='<div>• '+escapeHtml(p.name)+': <b>'+fa(Math.abs(cb))+' '+(cb>=0?'Cr':'Dr')+'</b></div>';
-  });
-  document.getElementById('ye-preview').innerHTML=lines;
+  var delCount=(DB.txns||[]).filter(function(t){return t.pid===yePid&&t.date&&t.date<=fyEnd;}).length;
+  var res=runEngine(p,(DB.txns||[]).filter(function(t){return t.pid===p.id;}),p.opendate||fyEnd,fyEnd);
+  var cb=res.closingBalance;
+  document.getElementById('ye-preview').innerHTML='<div><b>'+delCount+'</b> transaction(s) up to 31 Mar '+(sy+1)+' will be deleted.</div>'+
+    '<div style="margin-top:4px">New opening from 1 Apr '+(sy+1)+': <b>'+fa(Math.abs(cb))+' '+(cb>=0?'Cr':'Dr')+'</b></div>';
 }
-function openYearEnd(){
-  var years=yeYears(),sel=document.getElementById('ye-fy');
+function openYearEnd(pid){
+  yePid=pid;
+  var p=(DB.parties||[]).find(function(x){return x.id===pid;});if(!p)return;
+  document.getElementById('ye-pname').textContent=p.name;
+  var years=yeYears(pid),sel=document.getElementById('ye-fy');
   sel.innerHTML=years.map(function(s){return '<option value="'+s+'">'+fyLabel(s)+'</option>';}).join('');
   sel.value=years[years.length-1];
   document.getElementById('ye-confirm').checked=false;document.getElementById('ye-go').disabled=true;
   yePreview(+sel.value);
   document.getElementById('ye-modal').style.display='flex';
 }
-document.getElementById('b-yearend').addEventListener('click',openYearEnd);
 document.getElementById('ye-close').addEventListener('click',function(){document.getElementById('ye-modal').style.display='none';});
 document.getElementById('ye-cancel').addEventListener('click',function(){document.getElementById('ye-modal').style.display='none';});
 document.getElementById('ye-fy').addEventListener('change',function(){yePreview(+this.value);});
 document.getElementById('ye-confirm').addEventListener('change',function(){document.getElementById('ye-go').disabled=!this.checked;});
 document.getElementById('ye-go').addEventListener('click',function(){
+  var p=(DB.parties||[]).find(function(x){return x.id===yePid;});if(!p)return;
   var sy=+document.getElementById('ye-fy').value;
   var fyEnd=(sy+1)+'-03-31',nextStart=(sy+1)+'-04-01';
-  yeParties(sy).forEach(function(p){
-    var res=runEngine(p,(DB.txns||[]).filter(function(t){return t.pid===p.id;}),p.opendate||fyEnd,fyEnd);
-    var cb=res.closingBalance;
-    p.open=Math.abs(cb);p.otype=(cb>=0)?'Cr (I owe them)':'Dr (they owe me)';p.opendate=nextStart;
-  });
-  DB.txns=(DB.txns||[]).filter(function(t){return !(t.date&&t.date<=fyEnd);});
+  var res=runEngine(p,(DB.txns||[]).filter(function(t){return t.pid===p.id;}),p.opendate||fyEnd,fyEnd);
+  var cb=res.closingBalance;
+  p.open=Math.abs(cb);p.otype=(cb>=0)?'Cr (I owe them)':'Dr (they owe me)';p.opendate=nextStart;
+  DB.txns=(DB.txns||[]).filter(function(t){return !(t.pid===p.id&&t.date&&t.date<=fyEnd);});
   var cut=(sy+1)+'-04';
-  Object.keys(DB.intpay||{}).forEach(function(k){var ym=(k.split('|')[1]||'');if(ym&&ym<cut)delete DB.intpay[k];});
+  Object.keys(DB.intpay||{}).forEach(function(k){var pr=k.split('|'),ym=pr[1]||'';if(pr[0]===p.id&&ym&&ym<cut)delete DB.intpay[k];});
   save();
   document.getElementById('ye-modal').style.display='none';
   refreshUI();
-  alert(fyLabel(sy)+' closed. Closing balances carried forward as openings on 1 Apr '+(sy+1)+'.');
+  alert(p.name+': '+fyLabel(sy)+' closed. Closing balance carried forward as opening on 1 Apr '+(sy+1)+'.');
 });
 document.getElementById('r-from').addEventListener('change',loadPartyRep);
 document.getElementById('r-to').addEventListener('change',loadPartyRep);
