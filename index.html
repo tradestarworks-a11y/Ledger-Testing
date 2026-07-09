@@ -1016,9 +1016,12 @@ document.getElementById('b-qcc').addEventListener('click',function(){var bar=doc
 document.getElementById('qa-cc-ok').addEventListener('click',function(){var n=document.getElementById('qa-cc-input').value.trim();if(!n)return;var c=DB.cc.find(function(x){return (x.name||'').trim().toLowerCase()===n.toLowerCase();});if(c){alert('A cost center named "'+c.name+'" already exists — selecting it.');}else{c={id:Date.now().toString(),name:n,desc:''};DB.cc.push(c);save();}fillCCDD('t-cc','none');fillCCDD('r-cc','all');document.getElementById('t-cc').value=c.id;document.getElementById('qa-cc-input').value='';document.getElementById('qa-cc').classList.remove('open');});
 document.getElementById('qa-cc-cancel').addEventListener('click',function(){document.getElementById('qa-cc-input').value='';document.getElementById('qa-cc').classList.remove('open');});
 document.getElementById('qa-cc-input').addEventListener('keydown',function(e){if(e.key==='Enter')document.getElementById('qa-cc-ok').click();if(e.key==='Escape')document.getElementById('qa-cc-cancel').click();});
+function openDateOf(pid){var p=(DB.parties||[]).find(function(x){return x.id===pid;});return (p&&p.opendate)||'';}
 document.getElementById('b-savetxn').addEventListener('click',function(){
   var pid=document.getElementById('t-party').value,date=document.getElementById('t-date').value,amt=document.getElementById('t-amt').value;
   if(!pid||!date||!amt)return;
+  var od=openDateOf(pid);
+  if(od&&date<od){alert('Entry date '+fd(date)+' is before this party\'s opening balance date ('+fd(od)+'). Entries before the opening date are not allowed.');return;}
   DB.txns.push({id:Date.now().toString(),pid:pid,date:date,amt:parseFloat(amt),tt:cType,mode:document.getElementById('t-mode').value,ccid:document.getElementById('t-cc').value,narr:document.getElementById('t-narr').value});
   save();document.getElementById('t-amt').value='';document.getElementById('t-amt-words').textContent='';document.getElementById('t-narr').value='';document.getElementById('t-cc').value='';
   document.getElementById('qa-party').classList.remove('open');document.getElementById('qa-cc').classList.remove('open');document.getElementById('qa-mode').classList.remove('open');
@@ -1068,6 +1071,7 @@ function processImportRows(rows){
     var party=DB.parties.find(function(p){return (p.name||'').trim().toLowerCase()===pname.toLowerCase();});
     if(!party){errors.push('Row '+rn+': party "'+pname+'" not found');return;}
     var date=parseImportDate(rawget(row,'date'));if(!date){errors.push('Row '+rn+': invalid date (use dd-mm-yyyy)');return;}
+    if(party.opendate&&date<party.opendate){errors.push('Row '+rn+': date '+date+' is before "'+party.name+'" opening date '+party.opendate);return;}
     var tt=typeRaw.indexOf('rec')===0?'receipt':(typeRaw.indexOf('pay')===0?'payment':'');
     if(!tt){errors.push('Row '+rn+': Type must be Payment or Receipt');return;}
     var amt=parseFloat(amtRaw.replace(/[^0-9.\-]/g,''));if(!(amt>0)){errors.push('Row '+rn+': invalid amount');return;}
@@ -1093,8 +1097,10 @@ document.getElementById('b-closeedit').addEventListener('click',closeEdit);
 document.getElementById('b-canceledit').addEventListener('click',closeEdit);
 document.getElementById('b-saveedit').addEventListener('click',function(){
   if(!eTid)return;var idx=DB.txns.findIndex(function(t){return t.id===eTid;});if(idx<0)return;
-  var newPid=document.getElementById('e-party').value;
-  DB.txns[idx]={id:eTid,pid:newPid,date:document.getElementById('e-date').value,amt:parseFloat(document.getElementById('e-amt').value),tt:document.getElementById('e-type').value,mode:document.getElementById('e-mode').value,ccid:document.getElementById('e-cc').value,narr:document.getElementById('e-narr').value};
+  var newPid=document.getElementById('e-party').value,eDate=document.getElementById('e-date').value;
+  var eod=openDateOf(newPid);
+  if(eod&&eDate<eod){alert('Entry date '+fd(eDate)+' is before this party\'s opening balance date ('+fd(eod)+'). Entries before the opening date are not allowed.');return;}
+  DB.txns[idx]={id:eTid,pid:newPid,date:eDate,amt:parseFloat(document.getElementById('e-amt').value),tt:document.getElementById('e-type').value,mode:document.getElementById('e-mode').value,ccid:document.getElementById('e-cc').value,narr:document.getElementById('e-narr').value};
   save();closeEdit();renderTxns();renderDash();loadPartyRep();loadCCRep();
 });
 document.getElementById('rt-party').addEventListener('click',function(){document.getElementById('rt-party').className='rtab on';document.getElementById('rt-cc').className='rtab';document.getElementById('rep-party').style.display='block';document.getElementById('rep-cc').style.display='none';loadPartyRep();});
