@@ -279,6 +279,7 @@ var LEDGER=fbDB.collection('ledger').doc('main');
         <button class="btn btn-primary btn-sm" id="r-preview">Preview</button>
         <button class="btn btn-sm" id="b-pcsv" title="Export to Excel">📊 Excel</button>
         <button class="btn btn-sm" id="b-ppdf" title="Export to PDF">📄 PDF</button>
+        <button class="btn btn-sm" id="b-yearend" title="Delete an old financial year and carry its closing balance forward as next year's opening" style="margin-left:auto">🗓️ Year-end close</button>
       </div>
       <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:#666;margin-top:12px;align-items:center;border-top:1px solid #f0f0f0;padding-top:10px">
         <span style="color:#888">Columns:</span>
@@ -381,6 +382,17 @@ var LEDGER=fbDB.collection('ledger').doc('main');
       <p style="font-size:11px;color:#888;margin-bottom:6px">The link opens automatically on days 1–5 of each month. To let them view after that, grant one-time access:</p>
       <div style="display:flex;gap:8px"><button class="btn btn-sm" id="share-g24">Allow 24 hours</button><button class="btn btn-sm" id="share-g48">Allow 48 hours</button></div>
     </div>
+  </div>
+</div>
+
+<div id="ye-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:9500;align-items:center;justify-content:center;padding:1rem">
+  <div class="card" style="max-width:440px;width:100%">
+    <div class="row-hd" style="margin-bottom:1rem"><h2 style="font-size:14px">Year-end close</h2><button class="btn btn-sm" id="ye-close">✕</button></div>
+    <p style="font-size:12px;color:#888;margin-bottom:10px">Pick a completed financial year (Apr–Mar). For <b>every</b> party, its closing balance on 31 March becomes the opening balance of the next year, and all transactions on or before 31 March are permanently deleted.</p>
+    <div class="fg"><label>Financial year to close</label><select id="ye-fy" class="fsel" style="width:100%"></select></div>
+    <div id="ye-preview" style="font-size:12px;color:#555;max-height:200px;overflow:auto;border:1px solid #eee;border-radius:8px;padding:8px;margin-bottom:10px"></div>
+    <label class="int-toggle" style="padding:6px 0;font-size:12px"><input type="checkbox" id="ye-confirm"> I understand this permanently deletes those transactions.</label>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:6px"><button class="btn" id="ye-cancel">Cancel</button><button class="btn btn-danger" id="ye-go" disabled>Close year &amp; delete</button></div>
   </div>
 </div>
 
@@ -780,9 +792,23 @@ function appendPartyLedgerCard(body,party,from,to,showMg,hideCls){
   var card=document.createElement('div');card.className='card';
   card.innerHTML='<div style="margin-bottom:10px"><div style="font-weight:500">'+party.name+(showMg?'':' · <span style="font-weight:400;color:'+(isdr?'#16a34a':'#dc2626')+'">'+fa(Math.abs(res.closingBalance))+' '+(isdr?'Cr':'Dr')+'</span> · <span style="font-weight:400;color:#2563eb">Int '+fa(res.totalInterest)+'</span>')+'</div>'+
     '<div style="font-size:11px;color:#888">'+fd(from)+' to '+fd(to)+'</div></div>';
+  var headHd=card.firstElementChild;
+  var delBtn=document.createElement('button');delBtn.className='btn btn-sm btn-danger';delBtn.style.cssText='margin-top:6px;display:none';delBtn.textContent='🗑️ Delete selected';
+  function updDelBtn(){var n=card.querySelectorAll('.rowchk:checked').length;delBtn.style.display=n?'inline-block':'none';delBtn.textContent='🗑️ Delete selected ('+n+')';}
+  delBtn.addEventListener('click',function(){
+    var ids=Array.prototype.map.call(card.querySelectorAll('.rowchk:checked'),function(c){return c.getAttribute('data-id');});
+    if(!ids.length)return;
+    if(!confirm('Delete '+ids.length+' selected entr'+(ids.length>1?'ies':'y')+'? This cannot be undone.'))return;
+    DB.txns=DB.txns.filter(function(x){return ids.indexOf(x.id)<0;});
+    save();loadPartyRep();renderTxns();renderDash();
+  });
+  headHd.appendChild(delBtn);
   var wrap=document.createElement('div');wrap.style.overflowX='auto';
   var tbl=document.createElement('table');tbl.style.tableLayout='auto';
-  tbl.className=hideCls.join(' ');
+  var cls=hideCls.slice();
+  // Interest paid date only applies to Simple-interest parties; hide it for compound
+  if((party.itype||'Compound')!=='Simple'&&cls.indexOf('hide-ipd')<0)cls.push('hide-ipd');
+  tbl.className=cls.join(' ');
   tbl.innerHTML='<thead><tr><th class="c-date">Date</th><th class="c-type">Type</th><th class="c-mode">Mode</th><th class="c-cc">Cost center</th><th class="c-narr">Narration</th><th class="num">Payment (Dr)</th><th class="num">Receipt (Cr)</th><th class="num">Running balance</th><th class="num c-days">Days held</th><th class="num c-int">Interest (₹)</th><th class="c-ipd">Interest paid date</th><th class="c-appr">Comments</th><th class="c-act">Actions</th></tr></thead>';
   var tbody=document.createElement('tbody');
   res.ledger.forEach(function(row){
@@ -830,9 +856,11 @@ function appendPartyLedgerCard(body,party,from,to,showMg,hideCls){
       var eb=document.createElement('button');eb.className='btn btn-sm';eb.textContent='✏️';eb.title='Edit';eb.style.marginRight='4px';
       var db=document.createElement('button');db.className='btn btn-sm btn-danger';db.textContent='🗑️';db.title='Delete';
       var tid=row.id;
+      var chk=document.createElement('input');chk.type='checkbox';chk.className='rowchk';chk.setAttribute('data-id',tid);chk.style.marginRight='6px';chk.title='Select for bulk delete';
+      chk.addEventListener('change',updDelBtn);
       eb.addEventListener('click',function(){openEdit(tid);});
       db.addEventListener('click',function(){showConfirm(tr,'Delete?',function(){DB.txns=DB.txns.filter(function(x){return x.id!==tid;});save();loadPartyRep();renderTxns();renderDash();});});
-      actTd.appendChild(eb);actTd.appendChild(db);
+      actTd.appendChild(chk);actTd.appendChild(eb);actTd.appendChild(db);
     }
     tbody.appendChild(tr);
   });
@@ -1073,6 +1101,55 @@ setupAcct('r-party',getPartyItems);
 setupAcct('r-cc',getCCItems);
 document.getElementById('r-preview').addEventListener('click',loadPartyRep);
 document.getElementById('c-preview').addEventListener('click',loadCCRep);
+// ---- Year-end close: delete an old FY, carry closing balance forward as next opening ----
+function fyLabel(sy){return 'FY '+sy+'-'+String(sy+1).slice(-2);}
+function yeYears(){
+  var td=new Date(),ty=td.getFullYear(),tm=td.getMonth()+1;var curSy=(tm>=4)?ty:ty-1;
+  var earliest=curSy-1;
+  (DB.txns||[]).forEach(function(t){if(!t.date)return;var yy=+t.date.slice(0,4),mm=+t.date.slice(5,7);var s=(mm>=4)?yy:yy-1;if(s<earliest)earliest=s;});
+  var arr=[];for(var s=earliest;s<=curSy-1;s++)arr.push(s);return arr;
+}
+function yeParties(sy){var fyEnd=(sy+1)+'-03-31';return (DB.parties||[]).filter(function(p){return !(p.opendate&&p.opendate>fyEnd);});}
+function yePreview(sy){
+  var fyEnd=(sy+1)+'-03-31';
+  var delCount=(DB.txns||[]).filter(function(t){return t.date&&t.date<=fyEnd;}).length;
+  var lines='<div style="margin-bottom:6px"><b>'+delCount+'</b> transaction(s) up to 31 Mar '+(sy+1)+' will be deleted. New opening balances (from 1 Apr '+(sy+1)+'):</div>';
+  yeParties(sy).forEach(function(p){
+    var res=runEngine(p,(DB.txns||[]).filter(function(t){return t.pid===p.id;}),p.opendate||fyEnd,fyEnd);
+    var cb=res.closingBalance;
+    lines+='<div>• '+escapeHtml(p.name)+': <b>'+fa(Math.abs(cb))+' '+(cb>=0?'Cr':'Dr')+'</b></div>';
+  });
+  document.getElementById('ye-preview').innerHTML=lines;
+}
+function openYearEnd(){
+  var years=yeYears(),sel=document.getElementById('ye-fy');
+  sel.innerHTML=years.map(function(s){return '<option value="'+s+'">'+fyLabel(s)+'</option>';}).join('');
+  sel.value=years[years.length-1];
+  document.getElementById('ye-confirm').checked=false;document.getElementById('ye-go').disabled=true;
+  yePreview(+sel.value);
+  document.getElementById('ye-modal').style.display='flex';
+}
+document.getElementById('b-yearend').addEventListener('click',openYearEnd);
+document.getElementById('ye-close').addEventListener('click',function(){document.getElementById('ye-modal').style.display='none';});
+document.getElementById('ye-cancel').addEventListener('click',function(){document.getElementById('ye-modal').style.display='none';});
+document.getElementById('ye-fy').addEventListener('change',function(){yePreview(+this.value);});
+document.getElementById('ye-confirm').addEventListener('change',function(){document.getElementById('ye-go').disabled=!this.checked;});
+document.getElementById('ye-go').addEventListener('click',function(){
+  var sy=+document.getElementById('ye-fy').value;
+  var fyEnd=(sy+1)+'-03-31',nextStart=(sy+1)+'-04-01';
+  yeParties(sy).forEach(function(p){
+    var res=runEngine(p,(DB.txns||[]).filter(function(t){return t.pid===p.id;}),p.opendate||fyEnd,fyEnd);
+    var cb=res.closingBalance;
+    p.open=Math.abs(cb);p.otype=(cb>=0)?'Cr (I owe them)':'Dr (they owe me)';p.opendate=nextStart;
+  });
+  DB.txns=(DB.txns||[]).filter(function(t){return !(t.date&&t.date<=fyEnd);});
+  var cut=(sy+1)+'-04';
+  Object.keys(DB.intpay||{}).forEach(function(k){var ym=(k.split('|')[1]||'');if(ym&&ym<cut)delete DB.intpay[k];});
+  save();
+  document.getElementById('ye-modal').style.display='none';
+  refreshUI();
+  alert(fyLabel(sy)+' closed. Closing balances carried forward as openings on 1 Apr '+(sy+1)+'.');
+});
 document.getElementById('r-from').addEventListener('change',loadPartyRep);
 document.getElementById('r-to').addEventListener('change',loadPartyRep);
 ['cb-date','cb-type','cb-mode','cb-cc','cb-narr','cb-days','cb-int','cb-ipd','cb-appr','cb-act'].forEach(function(id){document.getElementById(id).addEventListener('change',loadPartyRep);});
@@ -1217,8 +1294,9 @@ function proceedViewer(){
 function viewerRes(){return runEngine(VSHARE.party,VSHARE.txns||[],document.getElementById('v-from').value,document.getElementById('v-to').value);}
 function renderViewer(){
   if(!VSHARE)return;var res=viewerRes();var isdr=res.closingBalance>=0;var body=document.getElementById('v-body');
+  var showIpd=((VSHARE.party&&VSHARE.party.itype)||'Compound')==='Simple';
   var h='<div class="mg"><div class="mc"><div class="ml">Closing balance</div><div class="mv" style="color:'+(isdr?'#16a34a':'#dc2626')+'">'+fa(Math.abs(res.closingBalance))+' '+(isdr?'Cr':'Dr')+'</div></div><div class="mc"><div class="ml">Total interest posted</div><div class="mv" style="color:#2563eb">'+fa(res.totalInterest)+'</div></div></div>';
-  h+='<div class="card"><div style="overflow-x:auto"><table style="table-layout:auto"><thead><tr><th>Date</th><th>Type</th><th>Mode</th><th>Narration</th><th class="num">Payment (Dr)</th><th class="num">Receipt (Cr)</th><th class="num">Running balance</th><th class="num">Days held</th><th class="num">Interest (₹)</th><th>Interest paid date</th><th>Comments</th></tr></thead><tbody>';
+  h+='<div class="card"><div style="overflow-x:auto"><table style="table-layout:auto"><thead><tr><th>Date</th><th>Type</th><th>Mode</th><th>Narration</th><th class="num">Payment (Dr)</th><th class="num">Receipt (Cr)</th><th class="num">Running balance</th><th class="num">Days held</th><th class="num">Interest (₹)</th>'+(showIpd?'<th>Interest paid date</th>':'')+'<th>Comments</th></tr></thead><tbody>';
   res.ledger.forEach(function(r){if(r.rowType==='segment')return;
     var isSI=r.rowType==='simpleint';
     var tcls=(r.rowType==='interest'||isSI)?' class="tr-int"':'';
@@ -1237,9 +1315,9 @@ function renderViewer(){
       '<td class="num" style="font-weight:500;color:'+(r.balance>=0?'#16a34a':'#dc2626')+'">'+(isSI?'':(fa(Math.abs(r.balance))+' '+(r.balance>=0?'Cr':'Dr')))+'</td>'+
       '<td class="num" style="color:#999">'+(!isSI&&r.accrDays?r.accrDays+' d':'')+'</td>'+
       '<td class="num" style="color:#2563eb">'+(isSI?fa(r.monthTotal):(r.accrInt?fa(r.accrInt):''))+'</td>'+
-      '<td>'+(ipd?fd(ipd):'')+'</td><td>'+apprCell+'</td></tr>';
+      (showIpd?('<td>'+(ipd?fd(ipd):'')+'</td>'):'')+'<td>'+apprCell+'</td></tr>';
   });
-  h+='<tr class="tr-foot"><td colspan="6" style="text-align:right;font-weight:600">Closing balance / Total interest</td><td class="num" style="font-weight:600">'+fa(Math.abs(res.closingBalance))+' '+(isdr?'Cr':'Dr')+'</td><td></td><td class="num" style="color:#2563eb;font-weight:600">'+fa(res.totalInterest)+'</td><td></td><td></td></tr>';
+  h+='<tr class="tr-foot"><td colspan="6" style="text-align:right;font-weight:600">Closing balance / Total interest</td><td class="num" style="font-weight:600">'+fa(Math.abs(res.closingBalance))+' '+(isdr?'Cr':'Dr')+'</td><td></td><td class="num" style="color:#2563eb;font-weight:600">'+fa(res.totalInterest)+'</td>'+(showIpd?'<td></td>':'')+'<td></td></tr>';
   h+='</tbody></table></div></div>';
   body.innerHTML=h;
   Array.prototype.forEach.call(body.querySelectorAll('.v-cmt-save'),function(btn){btn.addEventListener('click',function(){var tid=btn.getAttribute('data-id');var ci=body.querySelector('.v-cmt[data-id="'+tid+'"]');saveComment(tid,ci?ci.value:'',btn);});});
