@@ -483,13 +483,17 @@ function runEngine(party,allTxns,fromDate,toDate){
   // A "Dr (they owe me)" opening is a debit (negative); "Cr (I owe them)" is positive.
   // Positive balance => Cr, negative => Dr (see balLbl/balCol helpers).
   var openBal=parseFloat(party.open||0)*(party.otype==='Dr (they owe me)'?-1:1);
+  var hasOpenDate=!!party.opendate;
   var openDate=party.opendate||fromDate;
-  // Start of history = earliest of (opening date, earliest transaction, From date),
-  // so EVERY entry before the From date is computed and rolled into the opening balance
-  // (rather than dropped) — even if it predates the party's opening date.
+  // The opening balance is anchored AT the party's opening date: no balance, interest, or
+  // entries exist before it. Interest accrues only from the opening date onward — even when
+  // the report's From date is earlier (selecting an earlier From must NOT back-date interest).
+  // Legacy parties without an opening date fall back to rolling all prior history into the opening.
   var startDate=openDate;
-  allTxns.forEach(function(t){if(t.pid===party.id&&t.date&&t.date<startDate)startDate=t.date;});
-  if(fromDate&&fromDate<startDate)startDate=fromDate;
+  if(!hasOpenDate){
+    allTxns.forEach(function(t){if(t.pid===party.id&&t.date&&t.date<startDate)startDate=t.date;});
+    if(fromDate&&fromDate<startDate)startDate=fromDate;
+  }
   // When the statement "From" is later than the start of history we still compute the
   // full history (for an accurate carried-forward balance + interest accrual) but
   // only DISPLAY rows on/after this window start.
@@ -1023,7 +1027,7 @@ document.getElementById('b-savetxn').addEventListener('click',function(){
   var pid=document.getElementById('t-party').value,date=document.getElementById('t-date').value,amt=document.getElementById('t-amt').value;
   if(!pid||!date||!amt)return;
   var od=openDateOf(pid);
-  if(od&&date<od){alert('Entry date '+fd(date)+' is before this party\'s opening balance date ('+fd(od)+'). Entries before the opening date are not allowed.');return;}
+  if(od&&date<od){alert('Entry date '+fd(date)+' is before this party\'s opening balance date ('+fd(od)+').\n\nNo entries — manual or auto interest — are allowed before the opening balance date. To record this entry, first update the party\'s opening balance date in Masters.');return;}
   DB.txns.push({id:Date.now().toString(),pid:pid,date:date,amt:parseFloat(amt),tt:cType,mode:document.getElementById('t-mode').value,ccid:document.getElementById('t-cc').value,narr:document.getElementById('t-narr').value});
   save();document.getElementById('t-amt').value='';document.getElementById('t-amt-words').textContent='';document.getElementById('t-narr').value='';document.getElementById('t-cc').value='';
   document.getElementById('qa-party').classList.remove('open');document.getElementById('qa-cc').classList.remove('open');document.getElementById('qa-mode').classList.remove('open');
@@ -1073,7 +1077,7 @@ function processImportRows(rows){
     var party=DB.parties.find(function(p){return (p.name||'').trim().toLowerCase()===pname.toLowerCase();});
     if(!party){errors.push('Row '+rn+': party "'+pname+'" not found');return;}
     var date=parseImportDate(rawget(row,'date'));if(!date){errors.push('Row '+rn+': invalid date (use dd-mm-yyyy)');return;}
-    if(party.opendate&&date<party.opendate){errors.push('Row '+rn+': date '+date+' is before "'+party.name+'" opening date '+party.opendate);return;}
+    if(party.opendate&&date<party.opendate){errors.push('Row '+rn+': date '+date+' is before "'+party.name+'" opening balance date '+party.opendate+' — update the opening balance date in Masters to import it');return;}
     var tt=typeRaw.indexOf('rec')===0?'receipt':(typeRaw.indexOf('pay')===0?'payment':'');
     if(!tt){errors.push('Row '+rn+': Type must be Payment or Receipt');return;}
     var amt=parseFloat(amtRaw.replace(/[^0-9.\-]/g,''));if(!(amt>0)){errors.push('Row '+rn+': invalid amount');return;}
@@ -1101,7 +1105,7 @@ document.getElementById('b-saveedit').addEventListener('click',function(){
   if(!eTid)return;var idx=DB.txns.findIndex(function(t){return t.id===eTid;});if(idx<0)return;
   var newPid=document.getElementById('e-party').value,eDate=document.getElementById('e-date').value;
   var eod=openDateOf(newPid);
-  if(eod&&eDate<eod){alert('Entry date '+fd(eDate)+' is before this party\'s opening balance date ('+fd(eod)+'). Entries before the opening date are not allowed.');return;}
+  if(eod&&eDate<eod){alert('Entry date '+fd(eDate)+' is before this party\'s opening balance date ('+fd(eod)+').\n\nNo entries — manual or auto interest — are allowed before the opening balance date. To keep this date, first update the party\'s opening balance date in Masters.');return;}
   DB.txns[idx]={id:eTid,pid:newPid,date:eDate,amt:parseFloat(document.getElementById('e-amt').value),tt:document.getElementById('e-type').value,mode:document.getElementById('e-mode').value,ccid:document.getElementById('e-cc').value,narr:document.getElementById('e-narr').value};
   save();closeEdit();renderTxns();renderDash();loadPartyRep();loadCCRep();
 });
