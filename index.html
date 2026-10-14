@@ -1283,10 +1283,6 @@ function setAuthMode(m){authMode=m;var su=m==='signup';document.getElementById('
 function submitAuth(){var email=document.getElementById('auth-user').value.trim(),pass=document.getElementById('auth-pass').value;if(!email||!pass){showAuthErr('Enter email and password.');return;}if(authMode==='signup'){if(pass.length<6){showAuthErr('Password must be at least 6 characters.');return;}if(pass!==document.getElementById('auth-pass2').value){showAuthErr('Passwords do not match.');return;}fbAuth.createUserWithEmailAndPassword(email,pass).catch(function(e){showAuthErr(e.message);});}else{fbAuth.signInWithEmailAndPassword(email,pass).catch(function(e){showAuthErr(e.message);});}}
 function startApp(user){
   var _lk=document.getElementById('nt-lock');_lk.textContent='🔒';_lk.title='Sign out'+(user.email?' ('+user.email+')':'');
-  // Anonymous mode (login disabled): no account to sign out of or change a password for.
-  var anon=!user.email;
-  document.getElementById('nt-lock').style.display=anon?'none':'';
-  document.getElementById('nt-pw').style.display=anon?'none':'';
   document.getElementById('auth-gate').style.display='none';
   document.getElementById('app').style.display='';
   checkImport();
@@ -1309,9 +1305,8 @@ function refreshUI(){
 }
 if(SHARE){ initViewer(SHARE); }
 else fbAuth.onAuthStateChanged(function(user){
-  // Login temporarily disabled — sign in anonymously so the app opens with no prompt.
   if(user){startApp(user);}
-  else{document.getElementById('auth-gate').style.display='none';fbAuth.signInAnonymously().catch(function(e){alert('Could not open the ledger: '+(e&&e.message||e)+'\n(Enable Anonymous sign-in in Firebase Auth.)');});}
+  else{if(ledgerSub){ledgerSub();ledgerSub=null;}document.getElementById('app').style.display='none';setAuthMode('login');document.getElementById('auth-user').value='';document.getElementById('auth-pass').value='';document.getElementById('auth-pass2').value='';document.getElementById('auth-gate').style.display='flex';}
 });
 // ---- View-only shared ledger ----
 var VSHARE=null,VTOKEN=null,VAPPR={};
