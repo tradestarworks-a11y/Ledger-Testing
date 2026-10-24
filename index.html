@@ -1204,28 +1204,71 @@ document.getElementById('r-cc-to').addEventListener('change',loadCCRep);
 function fileSafe(s){return String(s||'report').replace(/[^a-z0-9]+/gi,'_').replace(/^_+|_+$/g,'')||'report';}
 // Excel sheet names: <=31 chars, cannot contain : \ / ? * [ ] and must be unique.
 function xlsxSheetName(name,used){var n=String(name||'Sheet').replace(/[:\\\/?*\[\]]/g,' ').replace(/\s+/g,' ').trim().slice(0,31)||'Sheet';var base=n,i=2;while(used[n.toLowerCase()]){var suf=' ('+i+')';n=base.slice(0,31-suf.length)+suf;i++;}used[n.toLowerCase()]=1;return n;}
-// One party's ledger as an array-of-arrays; numbers stay numeric so Excel can sum them.
-function partyXlsxAOA(party,res,from,to){
-  var aoa=[[party.name+' — Ledger'],['Period: '+fd(from)+' to '+fd(to)],[],
-    ['Date','Type','Mode','Cost center','Narration','Payment (Dr)','Receipt (Cr)','Balance','Dr/Cr','Days held','Interest','Interest paid date']];
-  var tl={receipt:'Receipt',payment:'Payment',interest:'Interest posted',opening:'Opening'},drTot=0,crTot=0;
+// Party-ledger export columns, honouring the report's column tick-boxes. Payment/Receipt/
+// Balance/Dr-Cr have no tick-box and are always included. Returns ordered active columns.
+function partyExportCols(party){
+  var on=function(id){var el=document.getElementById(id);return !el||el.checked;};
+  var cmtEl=document.getElementById('cb-appr');
+  var simple=(party.itype||'Compound')==='Simple';
+  return [
+    {k:'date',h:'Date',on:on('cb-date')},
+    {k:'type',h:'Type',on:on('cb-type')},
+    {k:'mode',h:'Mode',on:on('cb-mode')},
+    {k:'cc',h:'Cost center',on:on('cb-cc')},
+    {k:'narr',h:'Narration',on:on('cb-narr')},
+    {k:'pay',h:'Payment (Dr)',on:true,num:true,money:true},
+    {k:'rec',h:'Receipt (Cr)',on:true,num:true,money:true},
+    {k:'bal',h:'Balance',on:true,num:true,money:true},
+    {k:'drcr',h:'Dr/Cr',on:true},
+    {k:'days',h:'Days held',on:on('cb-days'),num:true},
+    {k:'int',h:'Interest',on:on('cb-int'),num:true,money:true},
+    {k:'ipd',h:'Interest paid date',on:on('cb-ipd')&&simple},
+    {k:'cmt',h:'Comments',on:!!cmtEl&&cmtEl.checked}
+  ].filter(function(c){return c.on;});
+}
+function partyCellVal(k,r,party,isSI){
+  if(k==='date')return fd(r.date);
+  if(k==='type')return isSI?'Interest':({receipt:'Receipt',payment:'Payment',interest:'Interest posted',opening:'Opening'}[r.rowType]||r.rowType);
+  if(k==='mode')return (r.rowType==='payment'||r.rowType==='receipt')?(r.mode||''):'';
+  if(k==='cc')return (!isSI&&r.ccid)?((DB.cc.find(function(c){return c.id===r.ccid;})||{}).name||''):'';
+  if(k==='narr')return isSI?r.label:(r.narr||'');
+  if(k==='pay')return (!isSI&&r.debit&&r.debit>0)?r2(r.debit):'';
+  if(k==='rec')return (!isSI&&r.credit&&r.credit>0)?r2(r.credit):'';
+  if(k==='bal')return isSI?'':r2(Math.abs(r.balance));
+  if(k==='drcr')return isSI?'':(r.balance>=0?'Cr':'Dr');
+  if(k==='days')return (!isSI&&r.accrDays)?r.accrDays:'';
+  if(k==='int')return isSI?r2(r.monthTotal):(r.accrInt?r2(r.accrInt):'');
+  if(k==='ipd'){var d=isSI?paidDate(party.id,r.ym):'';return d?fd(d):'';}
+  if(k==='cmt')return (!isSI&&APPROVALS[r.id]&&APPROVALS[r.id].c)?APPROVALS[r.id].c:'';
+  return '';
+}
+function partyTotalRow(cols,res,drTot,crTot){
+  var payIdx=-1;cols.forEach(function(c,i){if(c.k==='pay')payIdx=i;});
+  return cols.map(function(c,i){
+    if(c.k==='pay')return drTot;
+    if(c.k==='rec')return crTot;
+    if(c.k==='bal')return r2(Math.abs(res.closingBalance));
+    if(c.k==='drcr')return res.closingBalance>=0?'Cr':'Dr';
+    if(c.k==='int')return r2(res.totalInterest);
+    if(i===payIdx-1)return 'Totals';
+    return '';
+  });
+}
+function colWidth(k){return ({date:12,type:14,mode:12,cc:16,narr:28,pay:14,rec:14,bal:14,drcr:6,days:10,int:12,ipd:16,cmt:24})[k]||12;}
+// Apply Indian lakh/crore grouping (1,00,000.00) to the given numeric columns.
+function xlsxIndianFmt(ws,colIdxs,nRows){colIdxs.forEach(function(ci){for(var ri=0;ri<nRows;ri++){var a=XLSX.utils.encode_cell({r:ri,c:ci});var cell=ws[a];if(cell&&cell.t==='n')cell.z='#,##,##0.00';}});}
+// One party's ledger as an array-of-arrays (ticked columns only); numbers stay numeric.
+function partyXlsxAOA(party,res,from,to,cols){
+  var aoa=[[party.name+' — Ledger'],['Period: '+fd(from)+' to '+fd(to)],[],cols.map(function(c){return c.h;})];
+  var drTot=0,crTot=0;
   res.ledger.forEach(function(r){
     if(r.rowType==='segment')return;
     var isSI=r.rowType==='simpleint';
-    var cn=(!isSI&&r.ccid)?((DB.cc.find(function(c){return c.id===r.ccid;})||{}).name||''):'';
-    var ipd=isSI?paidDate(party.id,r.ym):'';
-    var pay=(!isSI&&r.debit&&r.debit>0)?r2(r.debit):'';
-    var rec=(!isSI&&r.credit&&r.credit>0)?r2(r.credit):'';
-    if(typeof pay==='number')drTot=r2(drTot+pay);
-    if(typeof rec==='number')crTot=r2(crTot+rec);
-    aoa.push([fd(r.date),isSI?'Interest':(tl[r.rowType]||r.rowType),
-      (r.rowType==='payment'||r.rowType==='receipt')?(r.mode||''):'',cn,
-      isSI?r.label:(r.narr||''),pay,rec,
-      isSI?'':r2(Math.abs(r.balance)),isSI?'':(r.balance>=0?'Cr':'Dr'),
-      (!isSI&&r.accrDays)?r.accrDays:'',isSI?r2(r.monthTotal):(r.accrInt?r2(r.accrInt):''),ipd?fd(ipd):'']);
+    if(!isSI){if(r.debit>0)drTot=r2(drTot+r.debit);if(r.credit>0)crTot=r2(crTot+r.credit);}
+    aoa.push(cols.map(function(c){return partyCellVal(c.k,r,party,isSI);}));
   });
   aoa.push([]);
-  aoa.push(['','','','','Totals',drTot,crTot,r2(Math.abs(res.closingBalance)),(res.closingBalance>=0?'Cr':'Dr'),'',r2(res.totalInterest),'']);
+  aoa.push(partyTotalRow(cols,res,drTot,crTot));
   return aoa;
 }
 document.getElementById('b-pcsv').addEventListener('click',function(){
@@ -1234,38 +1277,41 @@ document.getElementById('b-pcsv').addEventListener('click',function(){
   var from=document.getElementById('r-from').value,to=document.getElementById('r-to').value;
   var parties=sel.map(function(id){return DB.parties.find(function(p){return p.id===id;});}).filter(Boolean);
   if(!parties.length)return;
-  var wb=XLSX.utils.book_new(),used={},cols=[{wch:12},{wch:14},{wch:12},{wch:16},{wch:28},{wch:14},{wch:14},{wch:14},{wch:6},{wch:10},{wch:12},{wch:16}];
+  var wb=XLSX.utils.book_new(),used={};
   parties.forEach(function(party){
+    var cols=partyExportCols(party);
     var res=runEngine(party,DB.txns.filter(function(t){return t.pid===party.id;}),from,to);
-    var ws=XLSX.utils.aoa_to_sheet(partyXlsxAOA(party,res,from,to));ws['!cols']=cols;
+    var aoa=partyXlsxAOA(party,res,from,to,cols);
+    var ws=XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols']=cols.map(function(c){return {wch:colWidth(c.k)};});
+    var moneyIdx=[];cols.forEach(function(c,i){if(c.money)moneyIdx.push(i);});
+    xlsxIndianFmt(ws,moneyIdx,aoa.length);
     XLSX.utils.book_append_sheet(wb,ws,xlsxSheetName(party.name,used));
   });
   XLSX.writeFile(wb,(parties.length===1?fileSafe(parties[0].name):parties.length+'_parties')+'_ledger_'+to+'.xlsx');
 });
 function partyLedgerSection(party,res,from,to){
-  var isdr=res.closingBalance>=0;
+  var cols=partyExportCols(party),isdr=res.closingBalance>=0;
+  var fmt=function(c,v){
+    if(c.money&&typeof v==='number')return fa(v);
+    if(c.k==='days'&&typeof v==='number')return v+' d';
+    return escapeHtml(v===''||v==null?'':String(v));
+  };
+  var head=cols.map(function(c){return '<th'+(c.num?' style="text-align:right"':'')+'>'+escapeHtml(c.h)+'</th>';}).join('');
   var rows=res.ledger.map(function(r){
     if(r.rowType==='segment')return'';
     var isSI=r.rowType==='simpleint';
     var bg=(r.rowType==='interest'||isSI)?'background:#eff6ff;color:#2563eb':'';
-    var cn=(!isSI&&r.ccid)?((DB.cc.find(function(c){return c.id===r.ccid;})||{}).name||''):'';
-    var ipd=isSI?paidDate(party.id,r.ym):'';
-    return'<tr style="'+bg+'"><td style="font-size:10px;white-space:nowrap">'+fd(r.date)+'</td><td>'+(isSI?'Interest':r.rowType)+'</td>'+
-      '<td>'+((r.rowType==='payment'||r.rowType==='receipt')&&r.mode?escapeHtml(r.mode):'')+'</td>'+
-      '<td>'+escapeHtml(cn)+'</td>'+
-      '<td>'+escapeHtml(isSI?r.label:(r.narr||''))+'</td>'+
-      '<td style="text-align:right;color:#dc2626">'+(!isSI&&r.debit&&r.debit>0?fa(r.debit):'')+'</td>'+
-      '<td style="text-align:right;color:#16a34a">'+(!isSI&&r.credit&&r.credit>0?fa(r.credit):'')+'</td>'+
-      '<td style="text-align:right;font-weight:600;color:'+(r.balance>=0?'#16a34a':'#dc2626')+'">'+(isSI?'':(fa(Math.abs(r.balance))+' '+(r.balance>=0?'Cr':'Dr')))+'</td>'+
-      '<td style="text-align:right">'+(!isSI&&r.accrDays?r.accrDays+' d':'')+'</td>'+
-      '<td style="text-align:right;color:#2563eb">'+(isSI?fa(r.monthTotal):(r.accrInt?fa(r.accrInt):''))+'</td>'+
-      '<td>'+(ipd?fd(ipd):'')+'</td></tr>';
+    return '<tr style="'+bg+'">'+cols.map(function(c){return '<td'+(c.num?' style="text-align:right"':'')+'>'+fmt(c,partyCellVal(c.k,r,party,isSI))+'</td>';}).join('')+'</tr>';
   }).join('');
+  var drTot=0,crTot=0;
+  res.ledger.forEach(function(r){if(r.rowType!=='simpleint'&&r.rowType!=='segment'){if(r.debit>0)drTot=r2(drTot+r.debit);if(r.credit>0)crTot=r2(crTot+r.credit);}});
+  var totVals=partyTotalRow(cols,res,drTot,crTot);
+  var totRow=cols.map(function(c,i){return '<td'+(c.num?' style="text-align:right"':'')+'>'+fmt(c,totVals[i])+'</td>';}).join('');
   return '<h1>'+escapeHtml(party.name)+'</h1><p>'+fd(from)+' to '+fd(to)+'</p>'+
     '<div class="sum"><div class="box"><div class="lbl">Closing balance</div><div class="val" style="color:'+(isdr?'#16a34a':'#dc2626')+'">'+fa(Math.abs(res.closingBalance))+' '+(isdr?'Cr':'Dr')+'</div></div>'+
     '<div class="box"><div class="lbl">Interest posted</div><div class="val" style="color:#2563eb">'+fa(res.totalInterest)+'</div></div></div>'+
-    '<table><thead><tr><th>Date</th><th>Type</th><th>Mode</th><th>Cost center</th><th>Narration</th><th style="text-align:right">Payment (Dr)</th><th style="text-align:right">Receipt (Cr)</th><th style="text-align:right">Balance</th><th style="text-align:right">Days</th><th style="text-align:right">Interest</th><th>Interest paid date</th></tr></thead><tbody>'+rows+
-    '<tr class="tf"><td colspan="7" style="text-align:right">Closing balance / Total interest</td><td style="text-align:right">'+fa(Math.abs(res.closingBalance))+' '+(isdr?'Cr':'Dr')+'</td><td></td><td style="text-align:right;color:#2563eb">'+fa(res.totalInterest)+'</td><td></td></tr></tbody></table>';
+    '<table><thead><tr>'+head+'</tr></thead><tbody>'+rows+'<tr class="tf">'+totRow+'</tr></tbody></table>';
 }
 function ledgerPdfDoc(title,inner){
   printPDF('<!DOCTYPE html><html><head><meta charset="utf-8"><title>'+title+'</title><style>html{-webkit-print-color-adjust:exact;print-color-adjust:exact}body{font-family:Arial,sans-serif;font-size:11px;margin:28px;color:#222}h1{font-size:15px;margin-bottom:4px}p{color:#888;font-size:10px;margin-bottom:12px}.sum{display:flex;gap:14px;margin-bottom:14px;flex-wrap:wrap}.box{background:#f5f5f5;padding:8px 12px;border-radius:4px;min-width:110px}.lbl{font-size:9px;color:#888;margin-bottom:2px}.val{font-size:13px;font-weight:700}table{width:100%;border-collapse:collapse;font-size:10px;margin-bottom:18px}th{background:#f0f0f0;padding:5px 6px;text-align:left;border-bottom:1px solid #ddd}td{padding:4px 6px;border-bottom:1px solid #eee}.tf{font-weight:700;background:#f9f9f9}@media print{#ctrl{display:none!important}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}}</style></head><body>'+inner+'</body></html>');
@@ -1298,6 +1344,7 @@ document.getElementById('b-ccsv').addEventListener('click',function(){
   aoa.push([]);
   aoa.push(['','','','Totals',outT,inT,'',r2(Math.abs(run)),(run>=0?'Cr':'Dr')]);
   var ws=XLSX.utils.aoa_to_sheet(aoa);ws['!cols']=[{wch:12},{wch:18},{wch:16},{wch:28},{wch:14},{wch:14},{wch:12},{wch:14},{wch:6}];
+  xlsxIndianFmt(ws,[4,5,7],aoa.length); // Payment, Receipt, Balance -> Indian comma format
   var wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Cost centre');
   XLSX.writeFile(wb,'cc_'+fileSafe(label)+'_'+to+'.xlsx');
 });
