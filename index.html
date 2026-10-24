@@ -958,9 +958,6 @@ function printPDF(html){
   var full=html.replace('<body>','<body>'+bar+'<div style="margin-top:52px">').replace('</body>','</div></body>');
   f.contentDocument.open();f.contentDocument.write(full);f.contentDocument.close();
 }
-// Quote every CSV cell, double embedded quotes, and neutralise spreadsheet formula injection.
-function csvq(v){var s=String(v==null?'':v);if(/^[=+\-@\t\r]/.test(s))s="'"+s;return'"'+s.replace(/"/g,'""')+'"';}
-function dlCSV(c,n){var b=new Blob([c],{type:'text/csv'});var a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=n;document.body.appendChild(a);a.click();document.body.removeChild(a);}
 function showConfirm(container,msg,onYes){
   var ex=container.querySelector('.confirm-bar');if(ex){ex.remove();return;}
   var bar=document.createElement('div');bar.className='confirm-bar';
@@ -1203,18 +1200,47 @@ document.getElementById('r-to').addEventListener('change',loadPartyRep);
 document.getElementById('r-cc-from').addEventListener('change',loadCCRep);
 document.getElementById('r-cc-to').addEventListener('change',loadCCRep);
 
+// ---- Excel (.xlsx) export helpers ----
+function fileSafe(s){return String(s||'report').replace(/[^a-z0-9]+/gi,'_').replace(/^_+|_+$/g,'')||'report';}
+// Excel sheet names: <=31 chars, cannot contain : \ / ? * [ ] and must be unique.
+function xlsxSheetName(name,used){var n=String(name||'Sheet').replace(/[:\\\/?*\[\]]/g,' ').replace(/\s+/g,' ').trim().slice(0,31)||'Sheet';var base=n,i=2;while(used[n.toLowerCase()]){var suf=' ('+i+')';n=base.slice(0,31-suf.length)+suf;i++;}used[n.toLowerCase()]=1;return n;}
+// One party's ledger as an array-of-arrays; numbers stay numeric so Excel can sum them.
+function partyXlsxAOA(party,res,from,to){
+  var aoa=[[party.name+' — Ledger'],['Period: '+fd(from)+' to '+fd(to)],[],
+    ['Date','Type','Mode','Cost center','Narration','Payment (Dr)','Receipt (Cr)','Balance','Dr/Cr','Days held','Interest','Interest paid date']];
+  var tl={receipt:'Receipt',payment:'Payment',interest:'Interest posted',opening:'Opening'},drTot=0,crTot=0;
+  res.ledger.forEach(function(r){
+    if(r.rowType==='segment')return;
+    var isSI=r.rowType==='simpleint';
+    var cn=(!isSI&&r.ccid)?((DB.cc.find(function(c){return c.id===r.ccid;})||{}).name||''):'';
+    var ipd=isSI?paidDate(party.id,r.ym):'';
+    var pay=(!isSI&&r.debit&&r.debit>0)?r2(r.debit):'';
+    var rec=(!isSI&&r.credit&&r.credit>0)?r2(r.credit):'';
+    if(typeof pay==='number')drTot=r2(drTot+pay);
+    if(typeof rec==='number')crTot=r2(crTot+rec);
+    aoa.push([fd(r.date),isSI?'Interest':(tl[r.rowType]||r.rowType),
+      (r.rowType==='payment'||r.rowType==='receipt')?(r.mode||''):'',cn,
+      isSI?r.label:(r.narr||''),pay,rec,
+      isSI?'':r2(Math.abs(r.balance)),isSI?'':(r.balance>=0?'Cr':'Dr'),
+      (!isSI&&r.accrDays)?r.accrDays:'',isSI?r2(r.monthTotal):(r.accrInt?r2(r.accrInt):''),ipd?fd(ipd):'']);
+  });
+  aoa.push([]);
+  aoa.push(['','','','','Totals',drTot,crTot,r2(Math.abs(res.closingBalance)),(res.closingBalance>=0?'Cr':'Dr'),'',r2(res.totalInterest),'']);
+  return aoa;
+}
 document.getElementById('b-pcsv').addEventListener('click',function(){
+  if(typeof XLSX==='undefined'){alert('Spreadsheet library not loaded — check your internet connection and reload.');return;}
   var sel=msGet('r-party');if(!sel.length)return;
   var from=document.getElementById('r-from').value,to=document.getElementById('r-to').value;
   var parties=sel.map(function(id){return DB.parties.find(function(p){return p.id===id;});}).filter(Boolean);
-  var csv='';
+  if(!parties.length)return;
+  var wb=XLSX.utils.book_new(),used={},cols=[{wch:12},{wch:14},{wch:12},{wch:16},{wch:28},{wch:14},{wch:14},{wch:14},{wch:6},{wch:10},{wch:12},{wch:16}];
   parties.forEach(function(party){
     var res=runEngine(party,DB.txns.filter(function(t){return t.pid===party.id;}),from,to);
-    csv+=csvq(party.name+' ('+fd(from)+' to '+fd(to)+')')+'\nDate,Type,Mode,Cost center,Narration,Payment (Dr),Receipt (Cr),Balance,Days held,Interest,Interest paid date\n';
-    res.ledger.forEach(function(r){if(r.rowType==='segment')return;var isSI=r.rowType==='simpleint';var cn=(!isSI&&r.ccid)?((DB.cc.find(function(c){return c.id===r.ccid;})||{}).name||''):'';var ipd=isSI?paidDate(party.id,r.ym):'';csv+=[csvq(fd(r.date)),csvq(isSI?'interest':r.rowType),csvq(isSI?'':(r.mode||'')),csvq(cn),csvq(isSI?r.label:(r.narr||'')),(!isSI&&r.debit&&r.debit>0?r.debit.toFixed(2):''),(!isSI&&r.credit&&r.credit>0?r.credit.toFixed(2):''),csvq(isSI?'':(fa(Math.abs(r.balance))+(r.balance>=0?' Cr':' Dr'))),csvq(!isSI&&r.accrDays?r.accrDays:''),csvq(isSI?r.monthTotal.toFixed(2):(r.accrInt?r.accrInt.toFixed(2):'')),csvq(ipd?fd(ipd):'')].join(',')+'\n';});
-    csv+='\n';
+    var ws=XLSX.utils.aoa_to_sheet(partyXlsxAOA(party,res,from,to));ws['!cols']=cols;
+    XLSX.utils.book_append_sheet(wb,ws,xlsxSheetName(party.name,used));
   });
-  dlCSV(csv,(parties.length===1?parties[0].name:parties.length+'_parties')+'_ledger_'+to+'.csv');
+  XLSX.writeFile(wb,(parties.length===1?fileSafe(parties[0].name):parties.length+'_parties')+'_ledger_'+to+'.xlsx');
 });
 function partyLedgerSection(party,res,from,to){
   var isdr=res.closingBalance>=0;
@@ -1255,14 +1281,25 @@ document.getElementById('b-ppdf').addEventListener('click',function(){
 });
 function ccLabel(sel,plural){return sel.length?(sel.length===1?(DB.cc.find(function(c){return c.id===sel[0];})||{name:'Cost center'}).name:sel.length+(plural||' cost centers')):'All cost centers';}
 document.getElementById('b-ccsv').addEventListener('click',function(){
+  if(typeof XLSX==='undefined'){alert('Spreadsheet library not loaded — check your internet connection and reload.');return;}
   var sel=msGet('r-cc'),from=document.getElementById('r-cc-from').value,to=document.getElementById('r-cc-to').value;
   var inCC=function(t){return !sel.length||sel.indexOf(t.ccid)>=0;};
   var opening=DB.txns.filter(function(t){return inCC(t)&&from&&t.date<from;}).reduce(function(s,t){return s+ccNet(t);},0);
   var rng=DB.txns.filter(function(t){return inCC(t)&&(!from||t.date>=from)&&(!to||t.date<=to);}).sort(function(a,b){return a.date.localeCompare(b.date);});
-  var run=opening,csv='Date,Party,Cost center,Narration,Payment (Dr),Receipt (Cr),Mode,Running balance\n';
-  csv+=csvq(fd(from||''))+',,,Opening balance,,,,'+csvq(fa(Math.abs(opening))+(opening>=0?' Cr':' Dr'))+'\n';
-  rng.forEach(function(t){run+=ccNet(t);var p=DB.parties.find(function(x){return x.id===t.pid;});var c=DB.cc.find(function(x){return x.id===t.ccid;});csv+=[csvq(fd(t.date)),csvq(p?p.name:''),csvq(c?c.name:''),csvq(t.narr||''),(t.tt==='payment'?t.amt:''),(t.tt==='receipt'?t.amt:''),csvq(t.mode),csvq(fa(Math.abs(run))+(run>=0?' Cr':' Dr'))].join(',')+'\n';});
-  dlCSV(csv,'cc_'+ccLabel(sel,'_cost_centers').replace(/[^a-z0-9]+/gi,'_')+'_'+to+'.csv');
+  var label=ccLabel(sel);
+  var aoa=[['Cost centre: '+label],['Period: '+fd(from||'')+' to '+fd(to||'')],[],
+    ['Date','Party','Cost center','Narration','Payment (Dr)','Receipt (Cr)','Mode','Balance','Dr/Cr'],
+    [fd(from||''),'','','Opening balance','','','',r2(Math.abs(opening)),(opening>=0?'Cr':'Dr')]];
+  var run=opening,outT=0,inT=0;
+  rng.forEach(function(t){run+=ccNet(t);var p=DB.parties.find(function(x){return x.id===t.pid;});var c=DB.cc.find(function(x){return x.id===t.ccid;});
+    var pay=t.tt==='payment'?r2(parseFloat(t.amt)):'',rec=t.tt==='receipt'?r2(parseFloat(t.amt)):'';
+    if(typeof pay==='number')outT=r2(outT+pay);if(typeof rec==='number')inT=r2(inT+rec);
+    aoa.push([fd(t.date),p?p.name:'',c?c.name:'',t.narr||'',pay,rec,t.mode,r2(Math.abs(run)),(run>=0?'Cr':'Dr')]);});
+  aoa.push([]);
+  aoa.push(['','','','Totals',outT,inT,'',r2(Math.abs(run)),(run>=0?'Cr':'Dr')]);
+  var ws=XLSX.utils.aoa_to_sheet(aoa);ws['!cols']=[{wch:12},{wch:18},{wch:16},{wch:28},{wch:14},{wch:14},{wch:12},{wch:14},{wch:6}];
+  var wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Cost centre');
+  XLSX.writeFile(wb,'cc_'+fileSafe(label)+'_'+to+'.xlsx');
 });
 document.getElementById('b-cpdf').addEventListener('click',function(){
   var sel=msGet('r-cc'),from=document.getElementById('r-cc-from').value,to=document.getElementById('r-cc-to').value;
