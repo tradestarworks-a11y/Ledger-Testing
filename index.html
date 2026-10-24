@@ -38,7 +38,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-siz
 .mg{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:1rem}
 .mc{background:#f9f9f9;border-radius:8px;padding:1rem}
 .mc .ml{font-size:12px;color:#888;margin-bottom:4px}
-.mc .mv{font-size:17px;font-weight:600}
+.mc .mv{font-size:17px;font-weight:600;text-align:right}
 .ttype{display:flex;border-radius:8px;overflow:hidden;border:1px solid #e0e0e0;margin-bottom:10px}
 .ttbtn{flex:1;padding:10px;font-size:13px;font-weight:500;border:none;cursor:pointer;background:#f5f5f5;color:#666;font-family:inherit}
 .ttbtn:first-child{border-right:1px solid #e0e0e0}
@@ -65,6 +65,7 @@ table{width:100%;border-collapse:collapse;font-size:12px}
 th{text-align:left;padding:7px 8px;font-weight:500;color:#888;border-bottom:1px solid #f0f0f0;font-size:11px;background:#fafafa}
 td{padding:7px 8px;border-bottom:1px solid #f5f5f5;vertical-align:middle}
 .num{text-align:right}
+input[type=number]{text-align:right}
 .tr-int{background:#eff6ff}
 .tr-int td{color:#2563eb;font-weight:500}
 .tr-seg td{color:#999;font-size:11px}
@@ -172,7 +173,7 @@ var LEDGER=fbDB.collection('ledger').doc('main');
       <div class="fg"><label>Interest type</label><select id="p-itype"><option>Simple</option><option selected>Compound</option></select></div>
     </div>
     <div class="grid3">
-      <div class="fg"><label>Opening balance (₹)</label><input id="p-open" type="number" placeholder="0"><div id="p-open-words" style="font-size:11px;color:#2563eb;margin-top:3px;min-height:14px"></div></div>
+      <div class="fg"><label>Opening balance</label><input id="p-open" type="number" placeholder="0"><div id="p-open-words" style="font-size:11px;color:#2563eb;margin-top:3px;min-height:14px"></div></div>
       <div class="fg"><label>Opening type</label><select id="p-otype"><option>Dr (they owe me)</option><option>Cr (I owe them)</option></select></div>
       <div class="fg"><label>Opening balance date</label><input id="p-opendate" type="date"></div>
     </div>
@@ -230,7 +231,7 @@ var LEDGER=fbDB.collection('ledger').doc('main');
         <div class="fg"><label>Date</label><input id="t-date" type="date"></div>
       </div>
       <div class="grid3">
-        <div class="fg"><label>Amount (₹)</label><input id="t-amt" type="number" placeholder="0.00"><div id="t-amt-words" style="font-size:11px;color:#2563eb;margin-top:3px;min-height:14px"></div></div>
+        <div class="fg"><label>Amount</label><input id="t-amt" type="number" placeholder="0.00"><div id="t-amt-words" style="font-size:11px;color:#2563eb;margin-top:3px;min-height:14px"></div></div>
         <div class="fg"><label>Cost center</label>
           <div class="il"><select id="t-cc"><option value="">None</option></select><button class="btn btn-sm" id="b-qcc">+</button></div>
           <div class="quick-add-bar" id="qa-cc"><input id="qa-cc-input" placeholder="New cost center name"><button class="ok-btn" id="qa-cc-ok">Add</button><button id="qa-cc-cancel">Cancel</button></div>
@@ -332,7 +333,7 @@ var LEDGER=fbDB.collection('ledger').doc('main');
   <div class="card" style="border:2px solid #e0e0e0">
     <div class="row-hd" style="margin-bottom:1rem"><h2 style="font-size:14px">Edit transaction</h2><button class="btn btn-sm" id="b-closeedit">✕</button></div>
     <div class="grid2"><div class="fg"><label>Party</label><select id="e-party"></select></div><div class="fg"><label>Date</label><input id="e-date" type="date"></div></div>
-    <div class="grid3"><div class="fg"><label>Amount (₹)</label><input id="e-amt" type="number"><div id="e-amt-words" style="font-size:11px;color:#2563eb;margin-top:3px;min-height:14px"></div></div><div class="fg"><label>Cost center</label><select id="e-cc"></select></div><div class="fg"><label>Narration</label><input id="e-narr"></div></div>
+    <div class="grid3"><div class="fg"><label>Amount</label><input id="e-amt" type="number"><div id="e-amt-words" style="font-size:11px;color:#2563eb;margin-top:3px;min-height:14px"></div></div><div class="fg"><label>Cost center</label><select id="e-cc"></select></div><div class="fg"><label>Narration</label><input id="e-narr"></div></div>
     <div class="grid2"><div class="fg"><label>Type</label><select id="e-type"><option value="payment">Payment</option><option value="receipt">Receipt</option></select></div><div class="fg"><label>Mode</label><select id="e-mode"></select></div></div>
     <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn" id="b-canceledit">Cancel</button><button class="btn btn-primary" id="b-saveedit">Save changes</button></div>
   </div>
@@ -445,7 +446,7 @@ function ensureSharePin(s){var q=curQuarter();if(!s.pin||s.pinQuarter!==q){s.pin
 function ensureAllPins(){var ch=false;(DB.shares||[]).forEach(function(s){if(ensureSharePin(s))ch=true;});if(ch)save();}
 function fom(){var d=new Date();return new Date(d.getFullYear(),d.getMonth(),1).toISOString().split('T')[0];}
 function fd(iso){if(!iso)return'—';var p=iso.split('-');return p[2]+'-'+p[1]+'-'+p[0];}
-function fa(n){return'₹'+parseFloat(n||0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});}
+function fa(n){return parseFloat(n||0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});}
 function amountWords(val){
   var n=parseFloat(val);if(isNaN(n)||n===0)return '';
   var neg=n<0;n=Math.abs(n);
@@ -686,8 +687,8 @@ function renderDash(){
   DB.parties.forEach(function(p){var r=getSum(p);if(r.bal<0)dr+=Math.abs(r.bal);else cr+=r.bal;it+=r.interest;});
   document.getElementById('d-metrics').innerHTML='<div class="mc"><div class="ml">Total receivable (Dr)</div><div class="mv" style="color:#dc2626">'+fa(dr)+'</div></div><div class="mc"><div class="ml">Total payable (Cr)</div><div class="mv" style="color:#16a34a">'+fa(cr)+'</div></div><div class="mc"><div class="ml">Interest posted</div><div class="mv">'+fa(it)+'</div></div>';
   if(!DB.parties.length){document.getElementById('d-parties').innerHTML='<div class="empty">No parties yet.</div>';return;}
-  document.getElementById('d-parties').innerHTML='<table><thead><tr><th>Party</th><th>Balance</th><th>Interest posted</th><th>Net</th></tr></thead><tbody>'+
-  DB.parties.map(function(p){var r=getSum(p);var d=r.bal>=0;var c=d?'#16a34a':'#dc2626';var n=netOf(p,r);var nd=n>=0;var nc=nd?'#16a34a':'#dc2626';return'<tr><td style="font-weight:500">'+escapeHtml(p.name)+'</td><td style="color:'+c+'">'+fa(Math.abs(r.bal))+' '+(d?'Cr':'Dr')+'</td><td style="color:#2563eb">'+fa(r.interest)+'</td><td style="color:'+nc+';font-weight:500">'+fa(Math.abs(n))+' '+(nd?'Cr':'Dr')+'</td></tr>';}).join('')+'</tbody></table>';
+  document.getElementById('d-parties').innerHTML='<table><thead><tr><th>Party</th><th class="num">Balance</th><th class="num">Interest posted</th><th class="num">Net</th></tr></thead><tbody>'+
+  DB.parties.map(function(p){var r=getSum(p);var d=r.bal>=0;var c=d?'#16a34a':'#dc2626';var n=netOf(p,r);var nd=n>=0;var nc=nd?'#16a34a':'#dc2626';return'<tr><td style="font-weight:500">'+escapeHtml(p.name)+'</td><td class="num" style="color:'+c+'">'+fa(Math.abs(r.bal))+' '+(d?'Cr':'Dr')+'</td><td class="num" style="color:#2563eb">'+fa(r.interest)+'</td><td class="num" style="color:'+nc+';font-weight:500">'+fa(Math.abs(n))+' '+(nd?'Cr':'Dr')+'</td></tr>';}).join('')+'</tbody></table>';
 }
 
 function renderParties(){
@@ -747,13 +748,13 @@ function renderTxns(){
   var container=document.getElementById('txn-list');
   if(!txns.length){container.innerHTML='<div class="empty">No transactions found</div>';return;}
   var tbl=document.createElement('table');
-  tbl.innerHTML='<thead><tr><th>Date</th><th>Party</th><th>Amount</th><th>Type</th><th>Mode</th><th>Cost center</th><th>Narration</th><th>Actions</th></tr></thead>';
+  tbl.innerHTML='<thead><tr><th>Date</th><th>Party</th><th class="num">Amount</th><th>Type</th><th>Mode</th><th>Cost center</th><th>Narration</th><th>Actions</th></tr></thead>';
   var tbody=document.createElement('tbody');
   txns.forEach(function(t){
     var p=DB.parties.find(function(x){return x.id===t.pid;});
     var cc=DB.cc.find(function(x){return x.id===t.ccid;});
     var tr=document.createElement('tr');
-    tr.innerHTML='<td>'+fd(t.date)+'</td><td>'+(p?escapeHtml(p.name):'—')+'</td><td style="font-weight:500">'+fa(t.amt)+'</td>'+
+    tr.innerHTML='<td>'+fd(t.date)+'</td><td>'+(p?escapeHtml(p.name):'—')+'</td><td class="num" style="font-weight:500">'+fa(t.amt)+'</td>'+
       '<td><span class="badge '+(t.tt==='payment'?'bp':'br')+'">'+(t.tt==='payment'?'Pay':'Rcpt')+'</span></td>'+
       '<td><span class="tag">'+escapeHtml(t.mode)+'</span></td>'+
       '<td>'+(cc?'<span class="tag">'+escapeHtml(cc.name)+'</span>':'—')+'</td>'+
@@ -829,7 +830,7 @@ function appendPartyLedgerCard(body,party,from,to,showMg,hideCls){
   // Interest paid date only applies to Simple-interest parties; hide it for compound
   if((party.itype||'Compound')!=='Simple'&&cls.indexOf('hide-ipd')<0)cls.push('hide-ipd');
   tbl.className=cls.join(' ');
-  tbl.innerHTML='<thead><tr><th class="c-date">Date</th><th class="c-type">Type</th><th class="c-mode">Mode</th><th class="c-cc">Cost center</th><th class="c-narr">Narration</th><th class="num">Payment (Dr)</th><th class="num">Receipt (Cr)</th><th class="num">Running balance</th><th class="num c-days">Days held</th><th class="num c-int">Interest (₹)</th><th class="c-ipd">Interest paid date</th><th class="c-appr">Comments</th><th class="c-act">Actions</th></tr></thead>';
+  tbl.innerHTML='<thead><tr><th class="c-date">Date</th><th class="c-type">Type</th><th class="c-mode">Mode</th><th class="c-cc">Cost center</th><th class="c-narr">Narration</th><th class="num">Payment (Dr)</th><th class="num">Receipt (Cr)</th><th class="num">Running balance</th><th class="num c-days">Days held</th><th class="num c-int">Interest</th><th class="c-ipd">Interest paid date</th><th class="c-appr">Comments</th><th class="c-act">Actions</th></tr></thead>';
   var tbody=document.createElement('tbody');
   res.ledger.forEach(function(row){
     if(row.rowType==='segment')return;
@@ -1347,7 +1348,7 @@ function renderViewer(){
   if(!VSHARE)return;var res=viewerRes();var isdr=res.closingBalance>=0;var body=document.getElementById('v-body');
   var showIpd=((VSHARE.party&&VSHARE.party.itype)||'Compound')==='Simple';
   var h='<div class="mg"><div class="mc"><div class="ml">Closing balance</div><div class="mv" style="color:'+(isdr?'#16a34a':'#dc2626')+'">'+fa(Math.abs(res.closingBalance))+' '+(isdr?'Cr':'Dr')+'</div></div><div class="mc"><div class="ml">Total interest posted</div><div class="mv" style="color:#2563eb">'+fa(res.totalInterest)+'</div></div></div>';
-  h+='<div class="card"><div style="overflow-x:auto"><table style="table-layout:auto"><thead><tr><th>Date</th><th>Type</th><th>Mode</th><th>Narration</th><th class="num">Payment (Dr)</th><th class="num">Receipt (Cr)</th><th class="num">Running balance</th><th class="num">Days held</th><th class="num">Interest (₹)</th>'+(showIpd?'<th>Interest paid date</th>':'')+'<th>Comments</th></tr></thead><tbody>';
+  h+='<div class="card"><div style="overflow-x:auto"><table style="table-layout:auto"><thead><tr><th>Date</th><th>Type</th><th>Mode</th><th>Narration</th><th class="num">Payment (Dr)</th><th class="num">Receipt (Cr)</th><th class="num">Running balance</th><th class="num">Days held</th><th class="num">Interest</th>'+(showIpd?'<th>Interest paid date</th>':'')+'<th>Comments</th></tr></thead><tbody>';
   res.ledger.forEach(function(r){if(r.rowType==='segment')return;
     var isSI=r.rowType==='simpleint';
     var tcls=(r.rowType==='interest'||isSI)?' class="tr-int"':'';
