@@ -251,7 +251,7 @@ var LEDGER=fbDB.collection('ledger').doc('main');
       <button class="btn btn-sm" id="b-tmpl">⬇ Download Excel template</button>
       <label class="btn btn-sm" style="cursor:pointer">⬆ Import Excel/CSV<input type="file" id="imp-file" accept=".xlsx,.xls,.csv" style="display:none"></label>
     </div>
-    <p style="font-size:11px;color:#888;margin-top:8px">Fill the template — columns: <b>Date</b> (dd-mm-yyyy), <b>Party</b> (must match an existing party), <b>Type</b> (Payment/Receipt), <b>Amount</b>, <b>Mode</b>, <b>Cost center</b> (leave blank, or match an existing cost center exactly — new ones are not created on import), <b>Narration</b> (optional) — then upload it here. If any row has a problem, the whole file is rejected — fix it and upload again.</p>
+    <p style="font-size:11px;color:#888;margin-top:8px">Fill the template — columns: <b>Date</b> (dd-mm-yyyy), <b>Party</b> (must match an existing party), <b>Type</b> (Payment/Receipt), <b>Amount</b>, <b>Mode</b>, <b>Cost center</b>, <b>Narration</b> (optional) — then upload it here. Party, Mode and Cost center must each match an existing one exactly — nothing is auto-created, so add any new party / mode / cost center in Masters first. If any row has a problem, the whole file is rejected; fix it and upload again.</p>
   </div>
   <div class="card">
     <div class="row-hd"><h2>Recent 10 transactions</h2></div>
@@ -1088,7 +1088,7 @@ document.getElementById('imp-file').addEventListener('change',function(e){
   reader.readAsArrayBuffer(file);
 });
 function processImportRows(rows){
-  var added=[],errors=[],i=0,newModes=[];
+  var added=[],errors=[],i=0;
   var ccMap={};DB.cc.forEach(function(c){ccMap[(c.name||'').trim().toLowerCase()]=c.id;});
   var modeMap={};DB.modes.forEach(function(m){modeMap[(m.name||'').trim().toLowerCase()]=m.name;});
   rows.forEach(function(row,idx){
@@ -1103,7 +1103,9 @@ function processImportRows(rows){
     if(!tt){errors.push('Row '+rn+': Type must be Payment or Receipt');return;}
     var amt=parseFloat(amtRaw.replace(/[^0-9.\-]/g,''));if(!(amt>0)){errors.push('Row '+rn+': invalid amount');return;}
     var modeName=sget(row,'mode');
-    if(modeName){var mk=modeName.toLowerCase();if(modeMap[mk])modeName=modeMap[mk];else{var mid=String(Date.now())+'_m'+newModes.length;newModes.push({id:mid,name:modeName});modeMap[mk]=modeName;}}
+    // Payment mode must match an existing one exactly (case-insensitive) or be blank (uses the
+    // default mode). Never auto-create from the sheet — create new modes in Masters first.
+    if(modeName){var mk=modeName.toLowerCase();if(modeMap[mk])modeName=modeMap[mk];else{errors.push('Row '+rn+': payment mode "'+modeName+'" does not match any existing mode — fix it to an exact existing mode, or leave it blank. (Create the mode in Masters first if it is new.)');return;}}
     else modeName=(DB.modes[0]?DB.modes[0].name:'Bank');
     var ccName=sget(row,'cost center'),ccid='';
     // Cost center must match an existing one exactly (case-insensitive) or be blank.
@@ -1115,9 +1117,7 @@ function processImportRows(rows){
   if(errors.length){alert('❌ Import cancelled — nothing was imported.\n\n'+errors.length+' problem(s) found. Correct these rows in the Excel and upload the file again:\n\n'+errors.slice(0,30).join('\n')+(errors.length>30?'\n…and '+(errors.length-30)+' more':''));return;}
   if(!added.length){alert('No rows found to import — the file looks empty.');return;}
   var msg='Import '+added.length+' transaction(s)? Every row checked out.';
-  if(newModes.length)msg+='\n\n'+newModes.length+' new payment mode(s) will be created: '+newModes.map(function(m){return m.name;}).join(', ');
   if(!confirm(msg))return;
-  if(newModes.length)DB.modes=DB.modes.concat(newModes);
   DB.txns=DB.txns.concat(added);save();renderTxns();renderDash();
   alert('Imported '+added.length+' transaction(s).');
 }
