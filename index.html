@@ -251,7 +251,7 @@ var LEDGER=fbDB.collection('ledger').doc('main');
       <button class="btn btn-sm" id="b-tmpl">⬇ Download Excel template</button>
       <label class="btn btn-sm" style="cursor:pointer">⬆ Import Excel/CSV<input type="file" id="imp-file" accept=".xlsx,.xls,.csv" style="display:none"></label>
     </div>
-    <p style="font-size:11px;color:#888;margin-top:8px">Fill the template — columns: <b>Date</b> (dd-mm-yyyy), <b>Party</b> (must match an existing party), <b>Type</b> (Payment/Receipt), <b>Amount</b>, <b>Mode</b>, <b>Cost center</b> (optional), <b>Narration</b> (optional) — then upload it here.</p>
+    <p style="font-size:11px;color:#888;margin-top:8px">Fill the template — columns: <b>Date</b> (dd-mm-yyyy), <b>Party</b> (must match an existing party), <b>Type</b> (Payment/Receipt), <b>Amount</b>, <b>Mode</b>, <b>Cost center</b> (leave blank, or match an existing cost center exactly — new ones are not created on import), <b>Narration</b> (optional) — then upload it here. If any row has a problem, the whole file is rejected — fix it and upload again.</p>
   </div>
   <div class="card">
     <div class="row-hd"><h2>Recent 10 transactions</h2></div>
@@ -1088,7 +1088,7 @@ document.getElementById('imp-file').addEventListener('change',function(e){
   reader.readAsArrayBuffer(file);
 });
 function processImportRows(rows){
-  var added=[],errors=[],i=0,newCCs=[],newModes=[];
+  var added=[],errors=[],i=0,newModes=[];
   var ccMap={};DB.cc.forEach(function(c){ccMap[(c.name||'').trim().toLowerCase()]=c.id;});
   var modeMap={};DB.modes.forEach(function(m){modeMap[(m.name||'').trim().toLowerCase()]=m.name;});
   rows.forEach(function(row,idx){
@@ -1106,19 +1106,20 @@ function processImportRows(rows){
     if(modeName){var mk=modeName.toLowerCase();if(modeMap[mk])modeName=modeMap[mk];else{var mid=String(Date.now())+'_m'+newModes.length;newModes.push({id:mid,name:modeName});modeMap[mk]=modeName;}}
     else modeName=(DB.modes[0]?DB.modes[0].name:'Bank');
     var ccName=sget(row,'cost center'),ccid='';
-    if(ccName){var ck=ccName.toLowerCase();if(ccMap[ck])ccid=ccMap[ck];else{ccid=String(Date.now())+'_c'+newCCs.length;newCCs.push({id:ccid,name:ccName,desc:''});ccMap[ck]=ccid;}}
+    // Cost center must match an existing one exactly (case-insensitive) or be blank.
+    // Never auto-create from the sheet — a typo would file the entry under a junk cost center.
+    if(ccName){var ck=ccName.toLowerCase();if(ccMap[ck])ccid=ccMap[ck];else{errors.push('Row '+rn+': cost center "'+ccName+'" does not match any existing cost center — fix it to an exact existing name, or leave it blank. (Create the cost center in Masters first if it is new.)');return;}}
     added.push({id:String(Date.now())+'_'+(i++),pid:party.id,date:date,amt:amt,tt:tt,mode:modeName,ccid:ccid,narr:sget(row,'narration')});
   });
-  if(!added.length){alert('No valid rows found to import.'+(errors.length?'\n\n'+errors.slice(0,15).join('\n'):''));return;}
-  var msg='Import '+added.length+' transaction(s)?';
-  if(newCCs.length)msg+='\n'+newCCs.length+' new cost center(s) will be created: '+newCCs.map(function(c){return c.name;}).join(', ');
-  if(newModes.length)msg+='\n'+newModes.length+' new payment mode(s) will be created: '+newModes.map(function(m){return m.name;}).join(', ');
-  if(errors.length)msg+='\n\n'+errors.length+' row(s) will be skipped:\n'+errors.slice(0,15).join('\n')+(errors.length>15?'\n…':'');
+  // All-or-nothing: if ANY row has a problem, reject the whole file so nothing partial is imported.
+  if(errors.length){alert('❌ Import cancelled — nothing was imported.\n\n'+errors.length+' problem(s) found. Correct these rows in the Excel and upload the file again:\n\n'+errors.slice(0,30).join('\n')+(errors.length>30?'\n…and '+(errors.length-30)+' more':''));return;}
+  if(!added.length){alert('No rows found to import — the file looks empty.');return;}
+  var msg='Import '+added.length+' transaction(s)? Every row checked out.';
+  if(newModes.length)msg+='\n\n'+newModes.length+' new payment mode(s) will be created: '+newModes.map(function(m){return m.name;}).join(', ');
   if(!confirm(msg))return;
-  if(newCCs.length)DB.cc=DB.cc.concat(newCCs);
   if(newModes.length)DB.modes=DB.modes.concat(newModes);
   DB.txns=DB.txns.concat(added);save();renderTxns();renderDash();
-  alert('Imported '+added.length+' transaction(s).'+(newCCs.length?' Created '+newCCs.length+' cost center(s).':'')+(errors.length?' Skipped '+errors.length+'.':''));
+  alert('Imported '+added.length+' transaction(s).');
 }
 document.getElementById('b-closeedit').addEventListener('click',closeEdit);
 document.getElementById('b-canceledit').addEventListener('click',closeEdit);
