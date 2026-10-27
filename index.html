@@ -744,6 +744,7 @@ function renderModes(){
 }
 
 function renderTxns(){
+  if(typeof removeEditHolder==='function')removeEditHolder(); // keep the inline edit card out of a table about to be rebuilt
   var txns=DB.txns.slice().sort(function(a,b){return b.date.localeCompare(a.date);}).slice(0,10);
   var container=document.getElementById('txn-list');
   if(!txns.length){container.innerHTML='<div class="empty">No transactions found</div>';return;}
@@ -761,7 +762,7 @@ function renderTxns(){
       '<td style="color:#888;font-size:11px">'+escapeHtml(t.narr||'—')+'</td>'+
       '<td style="white-space:nowrap"><button class="btn btn-sm" style="margin-right:4px" title="Edit">✏️</button><button class="btn btn-sm btn-danger" title="Delete">🗑️</button></td>';
     var btns=tr.querySelectorAll('button');
-    btns[0].addEventListener('click',function(){openEdit(t.id);});
+    btns[0].addEventListener('click',function(){openEdit(t.id,tr);});
     btns[1].addEventListener('click',function(){showConfirm(tr,'Delete?',function(){DB.txns=DB.txns.filter(function(x){return x.id!==t.id;});save();renderTxns();renderDash();});});
     tbody.appendChild(tr);
   });
@@ -769,6 +770,7 @@ function renderTxns(){
 }
 
 function loadPartyRep(){
+  if(typeof removeEditHolder==='function')removeEditHolder();
   var sel=msGet('r-party'),body=document.getElementById('rep-party-body');
   if(!sel.length){body.innerHTML='';return;}
   var fromEl=document.getElementById('r-from'),toEl=document.getElementById('r-to');
@@ -879,7 +881,7 @@ function appendPartyLedgerCard(body,party,from,to,showMg,hideCls){
       var tid=row.id;
       var chk=document.createElement('input');chk.type='checkbox';chk.className='rowchk';chk.setAttribute('data-id',tid);chk.style.marginRight='6px';chk.title='Select for bulk delete';
       chk.addEventListener('change',updDelBtn);
-      eb.addEventListener('click',function(){openEdit(tid);});
+      eb.addEventListener('click',function(){openEdit(tid,tr);});
       db.addEventListener('click',function(){showConfirm(tr,'Delete?',function(){DB.txns=DB.txns.filter(function(x){return x.id!==tid;});save();loadPartyRep();renderTxns();renderDash();});});
       actTd.appendChild(chk);actTd.appendChild(eb);actTd.appendChild(db);
     }
@@ -900,6 +902,7 @@ function appendPartyLedgerCard(body,party,from,to,showMg,hideCls){
 
 function ccNet(t){return (t.tt==='receipt'?1:-1)*parseFloat(t.amt);}
 function loadCCRep(){
+  if(typeof removeEditHolder==='function')removeEditHolder();
   var sel=msGet('r-cc');
   var from=document.getElementById('r-cc-from').value;
   var to=document.getElementById('r-cc-to').value;
@@ -940,7 +943,7 @@ function loadCCRep(){
       '<td class="num" style="font-weight:500;color:'+(rd?'#16a34a':'#dc2626')+'">'+fa(Math.abs(run))+' '+(rd?'Cr':'Dr')+'</td>'+
       '<td><button class="btn btn-sm" style="margin-right:4px" title="Edit">✏️</button><button class="btn btn-sm btn-danger" title="Delete">🗑️</button></td>';
     var btns=tr.querySelectorAll('button');
-    btns[0].addEventListener('click',function(){openEdit(t.id);});
+    btns[0].addEventListener('click',function(){openEdit(t.id,tr);});
     btns[1].addEventListener('click',function(){showConfirm(tr,'Delete?',function(){DB.txns=DB.txns.filter(function(x){return x.id!==t.id;});save();loadCCRep();renderTxns();renderDash();});});
     tbody.appendChild(tr);
   });
@@ -983,8 +986,26 @@ function editMode(id){var m=DB.modes.find(function(x){return x.id===id;});if(!m)
 function setTxnType(t){cType=t;document.getElementById('tb-pay').className='ttbtn pay'+(t==='payment'?' on':'');document.getElementById('tb-rec').className='ttbtn rec'+(t==='receipt'?' on':'');document.getElementById('txn-hint').className='hint '+(t==='payment'?'pay':'rec');document.getElementById('txn-hint').textContent=t==='payment'?'Money going out':'Money coming in';document.getElementById('txn-title').textContent=t==='payment'?'Record payment':'Record receipt';}
 function backLand(){document.getElementById('txn-land').style.display='block';document.getElementById('txn-form').style.display='none';}
 function startTxn(t){document.getElementById('txn-land').style.display='none';document.getElementById('txn-form').style.display='block';setTxnType(t);fillModeDD('t-mode','sel');if(!document.getElementById('t-date').value)document.getElementById('t-date').value=tod();}
-function openEdit(id){var t=DB.txns.find(function(x){return x.id===id;});if(!t)return;eTid=id;fillDD('e-party','sel');fillCCDD('e-cc','none');fillModeDD('e-mode','sel');document.getElementById('e-party').value=t.pid;document.getElementById('e-date').value=t.date;document.getElementById('e-amt').value=t.amt;document.getElementById('e-amt-words').textContent=amountWords(t.amt);document.getElementById('e-cc').value=t.ccid||'';document.getElementById('e-narr').value=t.narr||'';document.getElementById('e-type').value=t.tt;document.getElementById('e-mode').value=t.mode;document.getElementById('edit-modal').style.display='block';document.getElementById('edit-modal').scrollIntoView({behavior:'smooth'});}
-function closeEdit(){document.getElementById('edit-modal').style.display='none';eTid=null;}
+function openEdit(id,anchorTr){var t=DB.txns.find(function(x){return x.id===id;});if(!t)return;eTid=id;fillDD('e-party','sel');fillCCDD('e-cc','none');fillModeDD('e-mode','sel');document.getElementById('e-party').value=t.pid;document.getElementById('e-date').value=t.date;document.getElementById('e-amt').value=t.amt;document.getElementById('e-amt-words').textContent=amountWords(t.amt);document.getElementById('e-cc').value=t.ccid||'';document.getElementById('e-narr').value=t.narr||'';document.getElementById('e-type').value=t.tt;document.getElementById('e-mode').value=t.mode;
+  var modal=document.getElementById('edit-modal');
+  placeEditInline(anchorTr,modal);
+  modal.style.display='block';
+  modal.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+// Drop the edit card into a full-width row directly below the clicked entry, instead of leaving
+// it parked at the bottom of the page. It is moved back home before any table re-render.
+function editHome(){return document.getElementById('app')||document.body;}
+function removeEditHolder(){var tr=document.getElementById('edit-holder-row'),modal=document.getElementById('edit-modal');if(tr){if(modal&&tr.contains(modal))editHome().appendChild(modal);if(tr.parentNode)tr.parentNode.removeChild(tr);}}
+function placeEditInline(anchorTr,modal){
+  removeEditHolder();
+  if(anchorTr&&anchorTr.parentNode&&anchorTr.tagName==='TR'){
+    var tr=document.createElement('tr');tr.id='edit-holder-row';
+    var td=document.createElement('td');td.colSpan=anchorTr.cells.length||99;td.style.padding='6px 4px';
+    td.appendChild(modal);tr.appendChild(td);
+    anchorTr.parentNode.insertBefore(tr,anchorTr.nextSibling);
+  }
+}
+function closeEdit(){var modal=document.getElementById('edit-modal');modal.style.display='none';removeEditHolder();if(modal.parentNode!==editHome())editHome().appendChild(modal);eTid=null;}
 function toggleJvFreq(){var simple=document.getElementById('p-itype').value==='Simple';document.getElementById('p-jv-row').style.display=simple?'none':'';document.getElementById('p-jvfreq-wrap').style.display=document.getElementById('p-intjv').checked?'':'none';}
 
 document.getElementById('b-addparty').addEventListener('click',function(){ePid=null;document.getElementById('pf-title').textContent='Add party';['p-name','p-phone','p-open','p-notes'].forEach(function(id){document.getElementById(id).value='';});document.getElementById('p-open-words').textContent='';document.getElementById('p-rate').value='24';document.getElementById('p-type').value='Individual';document.getElementById('p-itype').value='Compound';document.getElementById('p-otype').value='Dr (they owe me)';document.getElementById('p-opendate').value=tod();document.getElementById('p-intjv').checked=true;document.getElementById('p-jvfreq').value='Monthly';toggleJvFreq();document.getElementById('party-form').style.display='block';});
