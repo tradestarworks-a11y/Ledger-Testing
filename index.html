@@ -743,11 +743,26 @@ function renderModes(){
   });
 }
 
+// Bulk-select delete: wires every .rowchk checkbox + the .bulk-del button inside `container`.
+function wireBulkDelete(container,afterDelete){
+  var btn=container.querySelector('.bulk-del');if(!btn)return;
+  function upd(){var n=container.querySelectorAll('.rowchk:checked').length;btn.style.display=n?'inline-block':'none';btn.textContent='🗑️ Delete selected ('+n+')';}
+  Array.prototype.forEach.call(container.querySelectorAll('.rowchk'),function(c){c.addEventListener('change',upd);});
+  btn.addEventListener('click',function(){
+    var ids=Array.prototype.map.call(container.querySelectorAll('.rowchk:checked'),function(c){return c.getAttribute('data-id');});
+    if(!ids.length)return;
+    if(!confirm('Delete '+ids.length+' selected entr'+(ids.length>1?'ies':'y')+'? This cannot be undone.'))return;
+    DB.txns=DB.txns.filter(function(x){return ids.indexOf(x.id)<0;});
+    save();afterDelete();
+  });
+  upd();
+}
 function renderTxns(){
   if(typeof removeEditHolder==='function')removeEditHolder(); // keep the inline edit card out of a table about to be rebuilt
   var txns=DB.txns.slice().sort(function(a,b){return b.date.localeCompare(a.date);}).slice(0,10);
   var container=document.getElementById('txn-list');
   if(!txns.length){container.innerHTML='<div class="empty">No transactions found</div>';return;}
+  container.innerHTML='<div style="display:flex;justify-content:flex-end;margin-bottom:6px"><button class="btn btn-sm btn-danger bulk-del" style="display:none">🗑️ Delete selected</button></div>';
   var tbl=document.createElement('table');
   tbl.innerHTML='<thead><tr><th>Date</th><th>Party</th><th class="num">Amount</th><th>Type</th><th>Mode</th><th>Cost center</th><th>Narration</th><th>Actions</th></tr></thead>';
   var tbody=document.createElement('tbody');
@@ -760,13 +775,14 @@ function renderTxns(){
       '<td><span class="tag">'+escapeHtml(t.mode)+'</span></td>'+
       '<td>'+(cc?'<span class="tag">'+escapeHtml(cc.name)+'</span>':'—')+'</td>'+
       '<td style="color:#888;font-size:11px">'+escapeHtml(t.narr||'—')+'</td>'+
-      '<td style="white-space:nowrap"><button class="btn btn-sm" style="margin-right:4px" title="Edit">✏️</button><button class="btn btn-sm btn-danger" title="Delete">🗑️</button></td>';
+      '<td style="white-space:nowrap"><input type="checkbox" class="rowchk" data-id="'+t.id+'" style="margin-right:6px" title="Select for bulk delete"><button class="btn btn-sm" style="margin-right:4px" title="Edit">✏️</button><button class="btn btn-sm btn-danger" title="Delete">🗑️</button></td>';
     var btns=tr.querySelectorAll('button');
     btns[0].addEventListener('click',function(){openEdit(t.id,tr);});
     btns[1].addEventListener('click',function(){showConfirm(tr,'Delete?',function(){DB.txns=DB.txns.filter(function(x){return x.id!==t.id;});save();renderTxns();renderDash();});});
     tbody.appendChild(tr);
   });
-  tbl.appendChild(tbody);container.innerHTML='';container.appendChild(tbl);
+  tbl.appendChild(tbody);container.appendChild(tbl);
+  wireBulkDelete(container,function(){renderTxns();renderDash();});
 }
 
 function loadPartyRep(){
@@ -922,6 +938,7 @@ function loadCCRep(){
     '<div class="mc"><div class="ml">Closing balance</div><div class="mv" style="color:'+(cd?'#16a34a':'#dc2626')+'">'+fa(Math.abs(closing))+' '+(cd?'Cr':'Dr')+'</div></div>'+
     '</div>';
   var card=document.createElement('div');card.className='card';
+  card.innerHTML='<div style="display:flex;justify-content:flex-end;margin-bottom:6px"><button class="btn btn-sm btn-danger bulk-del" style="display:none">🗑️ Delete selected</button></div>';
   var wrap=document.createElement('div');wrap.style.overflowX='auto';
   var tbl=document.createElement('table');tbl.style.tableLayout='auto';
   tbl.innerHTML='<thead><tr><th>Date</th><th>Party</th><th>Cost center</th><th>Narration</th><th class="num">Payment (Dr)</th><th class="num">Receipt (Cr)</th><th>Mode</th><th class="num">Running balance</th><th>Actions</th></tr></thead>';
@@ -941,7 +958,7 @@ function loadCCRep(){
       '<td class="num" style="color:#16a34a">'+(t.tt==='receipt'?fa(t.amt):'')+'</td>'+
       '<td><span class="tag">'+escapeHtml(t.mode)+'</span></td>'+
       '<td class="num" style="font-weight:500;color:'+(rd?'#16a34a':'#dc2626')+'">'+fa(Math.abs(run))+' '+(rd?'Cr':'Dr')+'</td>'+
-      '<td><button class="btn btn-sm" style="margin-right:4px" title="Edit">✏️</button><button class="btn btn-sm btn-danger" title="Delete">🗑️</button></td>';
+      '<td style="white-space:nowrap"><input type="checkbox" class="rowchk" data-id="'+t.id+'" style="margin-right:6px" title="Select for bulk delete"><button class="btn btn-sm" style="margin-right:4px" title="Edit">✏️</button><button class="btn btn-sm btn-danger" title="Delete">🗑️</button></td>';
     var btns=tr.querySelectorAll('button');
     btns[0].addEventListener('click',function(){openEdit(t.id,tr);});
     btns[1].addEventListener('click',function(){showConfirm(tr,'Delete?',function(){DB.txns=DB.txns.filter(function(x){return x.id!==t.id;});save();loadCCRep();renderTxns();renderDash();});});
@@ -950,6 +967,7 @@ function loadCCRep(){
   var f1=document.createElement('tr');f1.className='tr-foot';
   f1.innerHTML='<td colspan="4" style="text-align:right;font-weight:600">Total</td><td class="num" style="color:#dc2626;font-weight:600">'+fa(out)+'</td><td class="num" style="color:#16a34a;font-weight:600">'+fa(inp)+'</td><td></td><td class="num" style="font-weight:600;color:'+(cd?'#16a34a':'#dc2626')+'">'+fa(Math.abs(closing))+' '+(cd?'Cr':'Dr')+'</td><td></td>';
   tbody.appendChild(f1);tbl.appendChild(tbody);wrap.appendChild(tbl);card.appendChild(wrap);body.appendChild(card);
+  wireBulkDelete(card,function(){loadCCRep();renderTxns();renderDash();});
 }
 
 function printPDF(html){
